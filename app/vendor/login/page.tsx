@@ -34,7 +34,7 @@ export default function VendorLoginPage() {
       return;
     }
 
-    router.push("/");
+    router.push("/vendor/dashboard");
   };
 
   return (

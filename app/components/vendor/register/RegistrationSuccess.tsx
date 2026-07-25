@@ -17,10 +17,10 @@ export function RegistrationSuccess({ shopName }: RegistrationSuccessProps) {
         review your details within 48 hours and notify you by email once your store is approved.
       </p>
       <Link
-        href="/"
+        href="/vendor/dashboard"
         className="rounded-lg bg-primary px-6 py-3 text-sm font-bold text-white shadow-md transition-all hover:bg-primary-container active:opacity-80"
       >
-        Back to Marketplace
+        Go to Vendor Dashboard
       </Link>
     </div>
   );

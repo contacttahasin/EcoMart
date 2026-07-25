@@ -5,7 +5,7 @@ import TopRatedVendors from "./components/home/TopRatedVendors";
 import NewArrivals from "./components/home/NewArrivals";
 import JoinSustainable from "./components/home/JoinSustainable";
 import Footer from "./components/layout/Footer";
-import ProductGrid from "./components/products/ProductGrid";
+
 
 export default function Page() {
   return (
