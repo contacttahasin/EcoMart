@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, ChevronDown, MapPin, ShieldCheck, Warehouse } fr
 import { useState } from "react";
 import type { VendorBusinessInfo } from "@/app/types/vendor";
 import { BUSINESS_CATEGORIES, BUSINESS_TYPES } from "@/services/vendor.service";
-import { DocumentDropzone } from "./DocumentDropzone";
 
 const inputClass =
   "w-full rounded-lg border border-outline-variant bg-surface-container-lowest px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-secondary-container/50";
@@ -21,19 +20,10 @@ export function Step2({ initialData, onNext, onBack }: Step2Props) {
   const [businessCategory, setBusinessCategory] = useState(initialData?.businessCategory ?? "");
   const [address, setAddress] = useState(initialData?.address ?? "");
   const [postalCode, setPostalCode] = useState(initialData?.postalCode ?? "");
-  const [tradeLicenseFileName, setTradeLicenseFileName] = useState(initialData?.tradeLicenseFileName ?? null);
-  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
-    setError(null);
-
-    if (!tradeLicenseFileName) {
-      setError("Please upload your Trade License document before continuing.");
-      return;
-    }
-
-    onNext({ shopName, businessType, businessCategory, address, postalCode, tradeLicenseFileName });
+    onNext({ shopName, businessType, businessCategory, address, postalCode });
   };
 
   return (
@@ -170,22 +160,6 @@ export function Step2({ initialData, onNext, onBack }: Step2Props) {
                 />
               </div>
             </div>
-
-            <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-foreground">Trade License Upload</label>
-              <DocumentDropzone
-                label="Trade License Document"
-                hint="PNG, JPG, or PDF"
-                fileName={tradeLicenseFileName}
-                onFileSelected={setTradeLicenseFileName}
-              />
-            </div>
-
-            {error && (
-              <p role="alert" className="text-sm font-medium text-red-600">
-                {error}
-              </p>
-            )}
 
             <div className="flex items-center justify-between border-t border-outline-variant pt-6">
               <button

@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/layout/Footer";
 import { ProductBreadcrumb } from "@/app/components/products/ProductBreadcrumb";
 import ProductFilters from "@/app/components/products/ProductFilters";
 import ProductGrid from "@/app/components/products/ProductGrid";
-import type { ProductFiltersState } from "@/app/components/products/filters/types";
+import type { ProductFiltersState, VendorOption } from "@/app/components/products/filters/types";
 import { DEFAULT_PRODUCT_FILTERS } from "@/app/hooks/useProductFilters";
-import { products } from "@/data/products";
-import { vendors } from "@/data/vendors";
+import { getVendorsForCategory } from "@/services/product.service";
 
 const CATEGORY_OPTIONS = [
   { id: "solar-power", label: "Solar Power" },
@@ -17,19 +16,23 @@ const CATEGORY_OPTIONS = [
   { id: "recycled-materials", label: "Recycled Materials" },
 ];
 
-const ELECTRONICS_VENDOR_IDS = new Set(
-  products.filter((product) => product.category === "Electronics").map((product) => product.vendorId)
-);
-const VENDOR_OPTIONS = vendors
-  .filter((vendor) => ELECTRONICS_VENDOR_IDS.has(vendor.id))
-  .map((vendor) => ({ id: vendor.id, label: vendor.name }));
-
 // Electronics run well past the $100 grocery-catalog default (the refurbished
 // laptop is $499), so this page seeds a wider starting price range.
 const INITIAL_FILTERS: ProductFiltersState = { ...DEFAULT_PRODUCT_FILTERS, price: { min: 0, max: 1000 } };
 
 export default function ElectronicsPage() {
   const [filters, setFilters] = useState<ProductFiltersState>(INITIAL_FILTERS);
+  const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVendorsForCategory("Electronics").then((options) => {
+      if (!cancelled) setVendorOptions(options);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <>
@@ -51,7 +54,7 @@ export default function ElectronicsPage() {
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
           <ProductFilters
             categoryOptions={CATEGORY_OPTIONS}
-            vendorOptions={VENDOR_OPTIONS}
+            vendorOptions={vendorOptions}
             initialFilters={INITIAL_FILTERS}
             onChange={setFilters}
           />

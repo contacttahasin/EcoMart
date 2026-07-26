@@ -4,6 +4,7 @@ import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { VendorAuthProvider } from "./context/VendorAuthContext";
 import { VendorProvider } from "./context/VendorContext";
+import { WishlistProvider } from "./context/WishlistContext";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -35,7 +36,9 @@ export default function RootLayout({
         <AuthProvider>
           <VendorAuthProvider>
             <CartProvider>
-              <VendorProvider>{children}</VendorProvider>
+              <WishlistProvider>
+                <VendorProvider>{children}</VendorProvider>
+              </WishlistProvider>
             </CartProvider>
           </VendorAuthProvider>
         </AuthProvider>

@@ -11,9 +11,10 @@ const inputClass =
 
 type LoginFormProps = {
   onSwitchToSignup: () => void;
+  onSwitchToForgotPassword: () => void;
 };
 
-export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
+export function LoginForm({ onSwitchToSignup, onSwitchToForgotPassword }: LoginFormProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -21,7 +22,7 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
   const { login } = useAuth();
   const router = useRouter();
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
 
@@ -30,7 +31,7 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
       return;
     }
 
-    const result = login(identifier, password);
+    const result = await login(identifier, password);
 
     if (!result.success) {
       setError(result.error);
@@ -74,9 +75,13 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
             <label htmlFor="password-login" className="text-sm font-medium text-foreground">
               Password
             </label>
-            <a href="#" className="text-xs font-semibold text-primary hover:underline">
+            <button
+              type="button"
+              onClick={onSwitchToForgotPassword}
+              className="text-xs font-semibold text-primary hover:underline"
+            >
               Forgot Password?
-            </a>
+            </button>
           </div>
           <div className="relative">
             <Lock

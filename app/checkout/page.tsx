@@ -11,11 +11,15 @@ import { PaymentMethod } from "@/app/components/checkout/PaymentMethod";
 import { TrustBadges } from "@/app/components/checkout/TrustBadges";
 import { OrderReview } from "@/app/components/checkout/OrderReview";
 import { useCart } from "@/app/context/CartContext";
+import { useAuthGuard } from "@/app/hooks/useAuthGuard";
+import type { PaymentMethodOption, ShippingInfo } from "@/services/order.service";
 
 const SHIPPING_COST: Record<DeliveryOption, number> = {
   standard: 5,
   eco: 0,
 };
+
+const EMPTY_SHIPPING: ShippingInfo = { fullName: "", email: "", phone: "", street: "", city: "", state: "", zipCode: "" };
 
 function StepNumber({ step }: { step: number }) {
   return (
@@ -47,12 +51,17 @@ function EmptyCheckout() {
 
 export default function CheckoutPage() {
   const { items } = useCart();
+  const { user: customer, isLoading } = useAuthGuard();
   const [delivery, setDelivery] = useState<DeliveryOption>("standard");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodOption>("card");
+  const [shipping, setShipping] = useState<ShippingInfo>(EMPTY_SHIPPING);
+
+  if (isLoading || !customer) return null;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <CheckoutHeader />
-      <main className="mx-auto w-full max-w-7xl flex-grow px-4 py-8 sm:px-6 lg:py-12">
+      <main className="mx-auto w-full max-w-7xl grow px-4 py-8 sm:px-6 lg:py-12">
         {items.length === 0 ? (
           <EmptyCheckout />
         ) : (
@@ -63,7 +72,7 @@ export default function CheckoutPage() {
                   <StepNumber step={1} />
                   <h2 className="text-xl font-bold text-foreground">Shipping Information</h2>
                 </div>
-                <ShippingForm />
+                <ShippingForm value={shipping} onChange={setShipping} />
               </section>
 
               <section className="space-y-4">
@@ -79,14 +88,21 @@ export default function CheckoutPage() {
                   <StepNumber step={3} />
                   <h2 className="text-xl font-bold text-foreground">Payment Method</h2>
                 </div>
-                <PaymentMethod />
+                <PaymentMethod value={paymentMethod} onChange={setPaymentMethod} />
               </section>
 
               <TrustBadges />
             </div>
 
             <div className="lg:col-span-5">
-              <OrderReview items={items} shippingCost={SHIPPING_COST[delivery]} />
+              <OrderReview
+                items={items}
+                shippingCost={SHIPPING_COST[delivery]}
+                customerId={customer.id}
+                shipping={shipping}
+                delivery={delivery}
+                paymentMethod={paymentMethod}
+              />
             </div>
           </div>
         )}

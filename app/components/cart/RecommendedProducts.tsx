@@ -2,19 +2,30 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo } from "react";
-import { products } from "@/data/products";
-import { getEffectivePrice } from "@/services/product.service";
+import { useEffect, useState } from "react";
+import type { Product } from "@/data/products";
+import { getEffectivePrice, getProducts } from "@/services/product.service";
 
 type RecommendedProductsProps = {
   excludeIds: string[];
 };
 
 export function RecommendedProducts({ excludeIds }: RecommendedProductsProps) {
-  const recommended = useMemo(() => {
-    const excluded = new Set(excludeIds);
-    return products.filter((product) => product.status === "active" && !excluded.has(product.id)).slice(0, 3);
-  }, [excludeIds]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const excludeKey = excludeIds.join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    getProducts({ limit: 20 }).then((result) => {
+      if (!cancelled) setProducts(result.products);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const excluded = new Set(excludeKey ? excludeKey.split(",") : []);
+  const recommended = products.filter((product) => !excluded.has(product.id)).slice(0, 3);
 
   if (recommended.length === 0) return null;
 

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Leaf, ShieldCheck, Truck } from "lucide-react";
 import { useState } from "react";
 import { AuthHeader } from "@/app/components/auth/AuthHeader";
+import { ForgotPasswordForm } from "@/app/components/auth/ForgotPasswordForm";
 import { LoginForm } from "@/app/components/auth/LoginForm";
 import { SignupForm } from "@/app/components/auth/SignupForm";
 
@@ -15,7 +16,7 @@ const TRUST_ITEMS = [
 ];
 
 export default function LoginPage() {
-  const [view, setView] = useState<"login" | "signup">("login");
+  const [view, setView] = useState<"login" | "signup" | "forgot">("login");
   const year = new Date().getFullYear();
 
   return (
@@ -38,11 +39,14 @@ export default function LoginPage() {
                 exit={{ opacity: 0, y: -10 }}
                 transition={{ duration: 0.25, ease: "easeOut" }}
               >
-                {view === "login" ? (
-                  <LoginForm onSwitchToSignup={() => setView("signup")} />
-                ) : (
-                  <SignupForm onSwitchToLogin={() => setView("login")} />
+                {view === "login" && (
+                  <LoginForm
+                    onSwitchToSignup={() => setView("signup")}
+                    onSwitchToForgotPassword={() => setView("forgot")}
+                  />
                 )}
+                {view === "signup" && <SignupForm onSwitchToLogin={() => setView("login")} />}
+                {view === "forgot" && <ForgotPasswordForm onSwitchToLogin={() => setView("login")} />}
               </motion.div>
             </AnimatePresence>
           </div>

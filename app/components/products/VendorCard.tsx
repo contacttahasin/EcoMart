@@ -1,5 +1,4 @@
 import { BadgeCheck, Star, Store, UserPlus } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import type { Vendor } from "@/data/vendors";
 
@@ -12,7 +11,8 @@ export function VendorCard({ vendor }: VendorCardProps) {
     <div className="flex flex-col gap-4 rounded-2xl bg-white p-5 shadow-md">
       <div className="flex items-center gap-3">
         {vendor.profileImage ? (
-          <Image
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={vendor.profileImage}
             alt={`${vendor.name}'s logo`}
             width={48}

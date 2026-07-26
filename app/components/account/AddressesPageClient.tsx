@@ -1,9 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, LockKeyhole, Pencil, Plus, ShieldCheck, Trash2, X } from "lucide-react";
+import { CheckCircle2, LockKeyhole, Pencil, Plus, ShieldCheck, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AddressLabel, CustomerAddress } from "@/data/customers";
+import { addAddress, deleteAddress, fetchAddresses, updateAddress } from "@/services/address.service";
 
 const LABEL_STYLES: Record<AddressLabel, string> = {
   Home: "bg-tertiary-container text-on-tertiary-container",
@@ -37,14 +38,30 @@ const EMPTY_FORM: FormState = {
 };
 
 type AddressesPageClientProps = {
-  initialAddresses: CustomerAddress[];
+  customerId: string;
 };
 
-export function AddressesPageClient({ initialAddresses }: AddressesPageClientProps) {
-  const [addresses, setAddresses] = useState(initialAddresses);
+export function AddressesPageClient({ customerId }: AddressesPageClientProps) {
+  const [addresses, setAddresses] = useState<CustomerAddress[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetchAddresses(customerId).then((data) => {
+      if (active) {
+        setAddresses(data);
+        setIsLoading(false);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [customerId]);
 
   useEffect(() => {
     if (!modalOpen) return;
@@ -83,38 +100,31 @@ export function AddressesPageClient({ initialAddresses }: AddressesPageClientPro
     setModalOpen(true);
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!window.confirm("Are you sure you want to delete this address?")) return;
 
-    setAddresses((prev) => {
-      const next = prev.filter((address) => address.id !== id);
-      const removedWasDefault = prev.find((address) => address.id === id)?.isDefault;
-      if (removedWasDefault && next.length > 0 && !next.some((address) => address.isDefault)) {
-        next[0] = { ...next[0], isDefault: true };
-      }
-      return next;
-    });
+    await deleteAddress(customerId, id);
+    setAddresses(await fetchAddresses(customerId));
   };
 
-  const handleSubmit = (event: React.FormEvent) => {
+  const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
+    setError(null);
+    setIsSaving(true);
 
-    setAddresses((prev) => {
-      const withoutDefaultClash = form.isDefault
-        ? prev.map((address) => ({ ...address, isDefault: false }))
-        : prev;
-
+    try {
       if (editingId) {
-        return withoutDefaultClash.map((address) =>
-          address.id === editingId ? { ...address, ...form } : address
-        );
+        await updateAddress(customerId, editingId, form);
+      } else {
+        await addAddress(customerId, form);
       }
-
-      const newAddress: CustomerAddress = { id: crypto.randomUUID(), ...form };
-      return [...withoutDefaultClash, newAddress];
-    });
-
-    setModalOpen(false);
+      setAddresses(await fetchAddresses(customerId));
+      setModalOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save address.");
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -134,8 +144,10 @@ export function AddressesPageClient({ initialAddresses }: AddressesPageClientPro
         </button>
       </header>
 
+      {isLoading && <p className="text-sm text-on-surface-variant">Loading your addresses...</p>}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-        {addresses.map((address) => (
+        {!isLoading && addresses.map((address) => (
           <div
             key={address.id}
             className="flex flex-col justify-between rounded-2xl border border-outline-variant bg-surface-container-lowest p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0px_8px_24px_rgba(0,0,0,0.08)]"
@@ -360,6 +372,12 @@ export function AddressesPageClient({ initialAddresses }: AddressesPageClientPro
                   <p className="text-xs text-on-surface-variant">Your address details are encrypted and never shared without consent.</p>
                 </div>
 
+                {error && (
+                  <p role="alert" className="text-sm font-medium text-error">
+                    {error}
+                  </p>
+                )}
+
                 <div className="flex justify-end gap-3 pt-2">
                   <button
                     type="button"
@@ -370,7 +388,8 @@ export function AddressesPageClient({ initialAddresses }: AddressesPageClientPro
                   </button>
                   <button
                     type="submit"
-                    className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-on-surface-variant active:scale-95"
+                    disabled={isSaving}
+                    className="flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-white shadow-sm transition-all hover:bg-on-surface-variant active:scale-95 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Pencil aria-hidden="true" className="h-4 w-4" />
                     {editingId ? "Save Changes" : "Add Address"}

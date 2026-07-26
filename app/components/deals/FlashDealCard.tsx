@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { Product } from "@/data/products";
 import { useCart } from "@/app/context/CartContext";
+import { useWishlist } from "@/app/context/WishlistContext";
 import { getEffectivePrice } from "@/services/product.service";
 
 type FlashDealCardProps = {
@@ -25,7 +26,8 @@ function getScarcity(stock: number) {
 
 export function FlashDealCard({ product }: FlashDealCardProps) {
   const { addItem } = useCart();
-  const [wishlisted, setWishlisted] = useState(false);
+  const { isWishlisted, toggle } = useWishlist();
+  const wishlisted = isWishlisted(product.id);
   const [quantity, setQuantity] = useState(1);
 
   const effectivePrice = getEffectivePrice(product);
@@ -53,7 +55,7 @@ export function FlashDealCard({ product }: FlashDealCardProps) {
           type="button"
           aria-label={wishlisted ? `Remove ${product.title} from wishlist` : `Add ${product.title} to wishlist`}
           aria-pressed={wishlisted}
-          onClick={() => setWishlisted((prev) => !prev)}
+          onClick={() => toggle(product)}
           className="absolute right-3 top-3 rounded-full bg-white/80 p-2 backdrop-blur-md transition-colors hover:bg-white"
         >
           <Heart aria-hidden="true" className={`h-4 w-4 text-primary ${wishlisted ? "fill-primary" : ""}`} />

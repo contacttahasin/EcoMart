@@ -1,16 +1,17 @@
 "use client";
 
 import { CreditCard, Nfc, Smartphone } from "lucide-react";
-import { useState } from "react";
-
-type PaymentOption = "card" | "bkash" | "nagad";
+import type { PaymentMethodOption } from "@/services/order.service";
 
 const inputClass =
   "w-full rounded-lg border border-outline-variant bg-white px-4 py-2.5 text-sm text-foreground outline-none transition-all placeholder:text-on-surface-variant/60 focus:border-primary focus:ring-2 focus:ring-secondary-container/40";
 
-export function PaymentMethod() {
-  const [method, setMethod] = useState<PaymentOption>("card");
+type PaymentMethodProps = {
+  value: PaymentMethodOption;
+  onChange: (value: PaymentMethodOption) => void;
+};
 
+export function PaymentMethod({ value: method, onChange: setMethod }: PaymentMethodProps) {
   return (
     <div className="space-y-4 rounded-xl border border-outline-variant bg-white p-4 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] sm:p-6">
       <div className="flex flex-wrap gap-3">

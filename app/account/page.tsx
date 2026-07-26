@@ -1,19 +1,19 @@
 "use client";
 
-import { Gift, Heart, MapPin, Package, ShoppingBag, Star, Ticket, UserCog, Wallet } from "lucide-react";
+import { Heart, MapPin, Package, ShoppingBag, UserCog, Wallet } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import Navbar from "@/app/components/Navbar";
 import { AccountBottomNav } from "@/app/components/account/AccountBottomNav";
 import { AccountSidebar } from "@/app/components/account/AccountSidebar";
 import { useAuth } from "@/app/context/AuthContext";
 import { useAuthGuard } from "@/app/hooks/useAuthGuard";
-import { orders } from "@/data/orders";
-import { formatOrderDate, STATUS_BADGE } from "@/services/order.service";
+import { useWishlist } from "@/app/context/WishlistContext";
+import { fetchCustomerOrders, formatOrderDate, STATUS_BADGE, type RealOrder } from "@/services/order.service";
 
 const QUICK_LINKS = [
   { icon: Package, title: "My Orders", description: "Track, return, or buy items again", href: "/account/orders" },
-  { icon: Gift, title: "Coupons & Rewards", description: "View your active promo codes & discounts", href: "#" },
   { icon: Heart, title: "Wishlist", description: "Your saved favorite items", href: "/account/wishlist" },
   { icon: MapPin, title: "Saved Addresses", description: "Manage delivery locations", href: "/account/addresses" },
   {
@@ -28,7 +28,14 @@ const QUICK_LINKS = [
 export default function AccountDashboardPage() {
   const { user: customer, isLoading } = useAuthGuard();
   const { logout } = useAuth();
+  const { productIds } = useWishlist();
+  const [orders, setOrders] = useState<RealOrder[]>([]);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!customer) return;
+    fetchCustomerOrders(customer.id).then(setOrders);
+  }, [customer]);
 
   const handleLogout = () => {
     logout();
@@ -37,16 +44,13 @@ export default function AccountDashboardPage() {
 
   if (isLoading || !customer) return null;
 
-  const customerOrders = orders
-    .filter((order) => order.customerId === customer.id)
-    .sort((a, b) => new Date(b.placedOn).getTime() - new Date(a.placedOn).getTime());
-  const recentOrders = customerOrders.slice(0, 2);
+  const recentOrders = orders.slice(0, 2);
+  const totalSpent = orders.reduce((sum, order) => sum + order.totalAmount, 0);
 
   const metrics = [
-    { icon: Wallet, label: "Total Spent", value: "৳12,500" },
-    { icon: ShoppingBag, label: "Total Orders", value: `${customerOrders.length} Orders` },
-    { icon: Ticket, label: "Available Coupons", value: "2 Vouchers" },
-    { icon: Star, label: "Reward Points", value: "350 Points" },
+    { icon: Wallet, label: "Total Spent", value: `$${totalSpent.toFixed(2)}` },
+    { icon: ShoppingBag, label: "Total Orders", value: `${orders.length} Orders` },
+    { icon: Heart, label: "Wishlist Items", value: `${productIds.size} Saved` },
   ];
 
   return (
@@ -82,7 +86,7 @@ export default function AccountDashboardPage() {
               </button>
             </section>
 
-            <section className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            <section className="grid grid-cols-1 gap-6 sm:grid-cols-3">
               {metrics.map(({ icon: Icon, label, value }) => (
                 <div
                   key={label}
@@ -138,6 +142,7 @@ export default function AccountDashboardPage() {
                 {recentOrders.map((order) => {
                   const badge = STATUS_BADGE[order.status];
                   const BadgeIcon = badge.icon;
+                  const firstItem = order.items[0];
 
                   return (
                     <div
@@ -149,9 +154,16 @@ export default function AccountDashboardPage() {
                           <Package aria-hidden="true" className="h-6 w-6 text-on-surface-variant" />
                         </div>
                         <div>
-                          <h4 className="text-sm font-medium text-foreground">{order.productName}</h4>
+                          <h4 className="text-sm font-medium text-foreground">
+                            {firstItem?.title ?? "Order"}
+                            {order.items.length > 1 && (
+                              <span className="ml-1 text-xs font-normal text-on-surface-variant">
+                                +{order.items.length - 1} more
+                              </span>
+                            )}
+                          </h4>
                           <p className="text-sm text-on-surface-variant">
-                            Order #{order.orderNumber} • {formatOrderDate(order.placedOn)}
+                            Order #{order.orderNumber} • {formatOrderDate(order.placedAt)}
                           </p>
                         </div>
                       </div>

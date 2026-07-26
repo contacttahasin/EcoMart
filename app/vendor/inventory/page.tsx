@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   ArrowLeftRight,
-  Bell,
   BellRing,
   ClipboardCheck,
   Download,
   Leaf,
   ListFilter,
+  Loader2,
   Menu,
   Save,
   Search,
@@ -20,86 +20,65 @@ import {
 } from "lucide-react";
 import { useVendorAuth } from "@/app/context/VendorAuthContext";
 import { VendorSidebar } from "@/app/components/vendor/dashboard/VendorSidebar";
+import { VendorNotificationBell } from "@/app/components/vendor/dashboard/VendorNotificationBell";
+import {
+  applyCsvStockAdjustments,
+  batchAdjustStock,
+  bulkApplyThreshold,
+  fetchStockMovements,
+  fetchVendorInventory,
+  parseStockCsv,
+  updateProductThreshold,
+  type InventoryRow,
+  type StockAction,
+  type StockMovementRow,
+} from "@/services/vendor-inventory.service";
 
-type SkuItem = {
-  id: string;
-  name: string;
-  category: string;
-  sku: string;
-  stock: number;
-  threshold: number;
-  emoji: string;
-};
+function formatMovementDate(iso: string) {
+  return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
 
-const initialSkus: SkuItem[] = [
-  {
-    id: "sku-1",
-    name: "Bamboo Toothbrush Set",
-    category: "Personal Care / Sustainable",
-    sku: "SKU-2024-BTB",
-    stock: 8,
-    threshold: 15,
-    emoji: "🪥",
-  },
-  {
-    id: "sku-2",
-    name: "Organic Cotton Bags (L)",
-    category: "Kitchen / Reusable",
-    sku: "SKU-BAG-L-C",
-    stock: 142,
-    threshold: 20,
-    emoji: "🛍️",
-  },
-  {
-    id: "sku-3",
-    name: "Bio-Degradable Detergent",
-    category: "Cleaning / Eco-Home",
-    sku: "SKU-CLEAN-BDD",
-    stock: 45,
-    threshold: 10,
-    emoji: "🧴",
-  },
-];
-
-const movementLog = [
-  {
-    date: "Oct 24, 2024 • 14:22",
-    sku: "SKU-2024-BTB",
-    change: "-2",
-    changeColor: "text-error",
-    reason: "Order #8832",
-    reasonStyle: "bg-secondary-container text-on-secondary-container",
-    updatedBy: "System Auto",
-  },
-  {
-    date: "Oct 23, 2024 • 09:15",
-    sku: "SKU-BAG-L-C",
-    change: "+100",
-    changeColor: "text-primary",
-    reason: "RESTOCK",
-    reasonStyle: "bg-surface-container-highest text-on-surface-variant uppercase tracking-tighter",
-    updatedBy: "Admin Alex",
-  },
-  {
-    date: "Oct 22, 2024 • 11:45",
-    sku: "SKU-CLEAN-BDD",
-    change: "+1",
-    changeColor: "text-primary",
-    reason: "Return",
-    reasonStyle: "bg-tertiary-container/20 text-tertiary",
-    updatedBy: "Warehouse Bot",
-  },
-];
+function printDocument(title: string, bodyHtml: string) {
+  const win = window.open("", "_blank", "width=720,height=900");
+  if (!win) return;
+  win.document.write(`<!doctype html><html><head><title>${title}</title>
+    <style>
+      body { font-family: -apple-system, sans-serif; padding: 32px; color: #1b211d; }
+      h1 { font-size: 20px; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #ddd; font-size: 13px; }
+    </style></head><body>${bodyHtml}</body></html>`);
+  win.document.close();
+  win.focus();
+  win.print();
+}
 
 export default function VendorInventoryPage() {
   const { vendor, isLoading } = useVendorAuth();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [skus, setSkus] = useState(initialSkus);
   const [isEditingThreshold, setIsEditingThreshold] = useState(false);
-  const [globalThreshold, setGlobalThreshold] = useState(15);
+  const [globalThreshold, setGlobalThreshold] = useState(10);
   const [draftThreshold, setDraftThreshold] = useState(String(globalThreshold));
+  const [globalThresholdSaving, setGlobalThresholdSaving] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [lowStockOnly, setLowStockOnly] = useState(false);
+
+  const [items, setItems] = useState<InventoryRow[]>([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [thresholdDrafts, setThresholdDrafts] = useState<Record<string, string>>({});
+  const [savingThresholdId, setSavingThresholdId] = useState<string | null>(null);
+
+  const [movements, setMovements] = useState<StockMovementRow[]>([]);
+
+  const [warehouse, setWarehouse] = useState("Seattle Central (Main)");
+  const [batchAction, setBatchAction] = useState<StockAction>("add");
+  const [batchQuantity, setBatchQuantity] = useState("10");
+  const [batchSaving, setBatchSaving] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [csvSaving, setCsvSaving] = useState(false);
+  const [modalMessage, setModalMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLoading && !vendor) {
@@ -122,18 +101,148 @@ export default function VendorInventoryPage() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  const updateThreshold = (id: string, threshold: number) => {
-    setSkus((prev) => prev.map((item) => (item.id === id ? { ...item, threshold } : item)));
+  const loadInventory = useCallback(async (vendorId: string) => {
+    const [rows, moves] = await Promise.all([fetchVendorInventory(vendorId), fetchStockMovements(vendorId)]);
+    setItems(rows);
+    setThresholdDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.threshold)])));
+    setMovements(moves);
+    if (rows.length > 0) {
+      const counts: Record<number, number> = {};
+      rows.forEach((row) => {
+        counts[row.threshold] = (counts[row.threshold] ?? 0) + 1;
+      });
+      const mostCommon = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+      setGlobalThreshold(Number(mostCommon));
+      setDraftThreshold(mostCommon);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!vendor) return;
+    let active = true;
+    Promise.all([fetchVendorInventory(vendor.id), fetchStockMovements(vendor.id)])
+      .then(([rows, moves]) => {
+        if (!active) return;
+        setItems(rows);
+        setThresholdDrafts(Object.fromEntries(rows.map((row) => [row.id, String(row.threshold)])));
+        setMovements(moves);
+        if (rows.length > 0) {
+          const counts: Record<number, number> = {};
+          rows.forEach((row) => {
+            counts[row.threshold] = (counts[row.threshold] ?? 0) + 1;
+          });
+          const mostCommon = Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
+          setGlobalThreshold(Number(mostCommon));
+          setDraftThreshold(mostCommon);
+        }
+      })
+      .finally(() => {
+        if (active) setItemsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [vendor?.id]);
+
+  const saveGlobalThreshold = async () => {
+    if (!vendor) return;
+    const parsed = Number(draftThreshold);
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      setDraftThreshold(String(globalThreshold));
+      setIsEditingThreshold(false);
+      return;
+    }
+    setGlobalThresholdSaving(true);
+    try {
+      await bulkApplyThreshold(vendor.id, parsed);
+      setGlobalThreshold(parsed);
+      await loadInventory(vendor.id);
+    } finally {
+      setGlobalThresholdSaving(false);
+      setIsEditingThreshold(false);
+    }
   };
 
-  const saveGlobalThreshold = () => {
-    const parsed = Number(draftThreshold);
-    if (!Number.isNaN(parsed) && parsed > 0) {
-      setGlobalThreshold(parsed);
-    } else {
-      setDraftThreshold(String(globalThreshold));
+  const handleSaveThreshold = async (item: InventoryRow) => {
+    const parsed = Number(thresholdDrafts[item.id]);
+    if (Number.isNaN(parsed) || parsed < 0 || parsed === item.threshold) return;
+    setSavingThresholdId(item.id);
+    try {
+      await updateProductThreshold(item.id, parsed);
+      setItems((prev) => prev.map((row) => (row.id === item.id ? { ...row, threshold: parsed } : row)));
+    } finally {
+      setSavingThresholdId(null);
     }
-    setIsEditingThreshold(false);
+  };
+
+  const filteredItems = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return items.filter((item) => {
+      if (lowStockOnly && item.stock >= item.threshold) return false;
+      if (!q) return true;
+      return item.title.toLowerCase().includes(q) || (item.sku ?? "").toLowerCase().includes(q);
+    });
+  }, [items, searchQuery, lowStockOnly]);
+
+  const totalSkuCount = items.length;
+  const lowStockCount = items.filter((item) => item.stock < item.threshold).length;
+  const restockEfficiency = totalSkuCount === 0 ? 0 : Math.round(((totalSkuCount - lowStockCount) / totalSkuCount) * 100);
+
+  const handleExportPdf = () => {
+    const rows = filteredItems
+      .map(
+        (item) =>
+          `<tr><td>${item.title}</td><td>${item.sku ?? "—"}</td><td>${item.category}</td><td>${item.stock}</td><td>${item.threshold}</td></tr>`
+      )
+      .join("");
+    printDocument(
+      "Inventory Report",
+      `<h1>Inventory Report — ${vendor?.businessName ?? ""}</h1>
+       <table><thead><tr><th>Product</th><th>SKU</th><th>Category</th><th>Stock</th><th>Threshold</th></tr></thead>
+       <tbody>${rows}</tbody></table>`
+    );
+  };
+
+  const handleBatchProcess = async () => {
+    if (!vendor) return;
+    const quantity = Number(batchQuantity);
+    if (Number.isNaN(quantity) || quantity < 0) {
+      setModalMessage("Enter a valid quantity.");
+      return;
+    }
+    setBatchSaving(true);
+    setModalMessage(null);
+    try {
+      const count = await batchAdjustStock(batchAction, quantity, vendor.businessName);
+      await loadInventory(vendor.id);
+      setModalMessage(`Applied to ${count} product${count === 1 ? "" : "s"}.`);
+    } catch (err) {
+      setModalMessage(err instanceof Error ? err.message : "Could not process the batch.");
+    } finally {
+      setBatchSaving(false);
+    }
+  };
+
+  const handleCsvImport = async () => {
+    if (!vendor || !csvFile) return;
+    setCsvSaving(true);
+    setModalMessage(null);
+    try {
+      const text = await csvFile.text();
+      const rows = parseStockCsv(text);
+      if (rows.length === 0) {
+        setModalMessage("No valid rows found. Expect columns: sku,change,reason");
+        return;
+      }
+      const result = await applyCsvStockAdjustments(vendor.id, rows, vendor.businessName);
+      await loadInventory(vendor.id);
+      setModalMessage(
+        `Applied ${result.applied} adjustment${result.applied === 1 ? "" : "s"}.` +
+          (result.skipped.length ? ` Skipped unknown SKUs: ${result.skipped.join(", ")}` : "")
+      );
+    } finally {
+      setCsvSaving(false);
+    }
   };
 
   if (isLoading || !vendor) {
@@ -173,20 +282,15 @@ export default function VendorInventoryPage() {
               />
               <input
                 type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search SKU, Product Name…"
                 className="w-full rounded-full border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm outline-none transition-all focus:ring-2 focus:ring-secondary-container"
               />
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="relative rounded-full p-2 transition-all hover:bg-surface-container-high/50"
-            >
-              <Bell aria-hidden="true" className="h-5 w-5 text-on-surface-variant" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-error" />
-            </button>
+            <VendorNotificationBell />
             <div className="flex items-center gap-3 border-l border-outline-variant pl-3 sm:pl-6">
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-medium text-foreground">{vendor.businessName}</p>
@@ -194,8 +298,13 @@ export default function VendorInventoryPage() {
                   Premium Vendor
                 </p>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary-container bg-secondary-container text-sm font-bold text-on-secondary-container">
-                {initials}
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-primary-container bg-secondary-container text-sm font-bold text-on-secondary-container">
+                {vendor.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={vendor.avatar} alt={vendor.businessName} className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
             </div>
           </div>
@@ -211,7 +320,10 @@ export default function VendorInventoryPage() {
             </div>
             <button
               type="button"
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                setModalMessage(null);
+                setIsModalOpen(true);
+              }}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-6 py-3 text-sm font-medium text-white shadow-lg transition-all hover:scale-[1.02] active:scale-95 sm:w-auto"
             >
               <ArrowLeftRight aria-hidden="true" className="h-5 w-5" />
@@ -227,7 +339,7 @@ export default function VendorInventoryPage() {
                 </div>
                 <h3 className="mb-2 text-lg font-semibold text-foreground">Global Threshold</h3>
                 <p className="mb-6 text-sm text-on-surface-variant">
-                  Automatically tag items as &apos;Low Stock&apos; when they fall below this value.
+                  Automatically tag items as &apos;Low Stock&apos; when they fall below this value. Saving applies it to every product.
                 </p>
               </div>
               <div className="relative z-10 rounded-2xl border border-outline-variant bg-surface-container p-4">
@@ -244,8 +356,10 @@ export default function VendorInventoryPage() {
                     <button
                       type="button"
                       onClick={saveGlobalThreshold}
-                      className="text-sm font-semibold text-primary hover:underline"
+                      disabled={globalThresholdSaving}
+                      className="flex items-center gap-1 text-sm font-semibold text-primary hover:underline disabled:opacity-50"
                     >
+                      {globalThresholdSaving && <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />}
                       Save
                     </button>
                   </div>
@@ -266,7 +380,7 @@ export default function VendorInventoryPage() {
                 )}
               </div>
               <div className="pointer-events-none absolute -bottom-8 -right-8 opacity-5">
-                <Leaf aria-hidden="true" className="h-[200px] w-[200px]" />
+                <Leaf aria-hidden="true" className="h-50 w-50" />
               </div>
             </section>
 
@@ -275,17 +389,17 @@ export default function VendorInventoryPage() {
               <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
                 <div className="flex flex-col gap-2 rounded-2xl border border-outline-variant/30 bg-surface-container-low p-6">
                   <ClipboardCheck aria-hidden="true" className="h-8 w-8 text-primary" />
-                  <span className="text-3xl font-bold leading-none text-foreground sm:text-4xl">1,284</span>
+                  <span className="text-3xl font-bold leading-none text-foreground sm:text-4xl">{totalSkuCount}</span>
                   <span className="text-sm text-on-surface-variant">Total SKU Count</span>
                 </div>
                 <div className="flex flex-col gap-2 rounded-2xl border border-error/20 bg-error-container/10 p-6">
                   <AlertTriangle aria-hidden="true" className="h-8 w-8 text-error" />
-                  <span className="text-3xl font-bold leading-none text-error sm:text-4xl">24</span>
+                  <span className="text-3xl font-bold leading-none text-error sm:text-4xl">{lowStockCount}</span>
                   <span className="text-sm text-on-surface-variant">Low Stock Alerts</span>
                 </div>
                 <div className="flex flex-col gap-2 rounded-2xl border border-tertiary/20 bg-tertiary-container/10 p-6">
                   <TrendingUp aria-hidden="true" className="h-8 w-8 text-tertiary" />
-                  <span className="text-3xl font-bold leading-none text-tertiary sm:text-4xl">+12%</span>
+                  <span className="text-3xl font-bold leading-none text-tertiary sm:text-4xl">{restockEfficiency}%</span>
                   <span className="text-sm text-on-surface-variant">Restock Efficiency</span>
                 </div>
               </div>
@@ -297,6 +411,7 @@ export default function VendorInventoryPage() {
                 <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
+                    onClick={handleExportPdf}
                     className="flex items-center gap-2 rounded-full bg-surface-container px-4 py-2 text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container-highest"
                   >
                     <Download aria-hidden="true" className="h-4 w-4" />
@@ -304,7 +419,12 @@ export default function VendorInventoryPage() {
                   </button>
                   <button
                     type="button"
-                    className="flex items-center gap-2 rounded-full bg-secondary-container px-4 py-2 text-sm font-medium text-on-secondary-container transition-colors hover:opacity-80"
+                    onClick={() => setLowStockOnly((prev) => !prev)}
+                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                      lowStockOnly
+                        ? "bg-error-container text-on-error-container"
+                        : "bg-secondary-container text-on-secondary-container hover:opacity-80"
+                    }`}
                   >
                     <ListFilter aria-hidden="true" className="h-4 w-4" />
                     Filter: Low Stock
@@ -329,51 +449,80 @@ export default function VendorInventoryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/30">
-                    {skus.map((item) => {
-                      const isLow = item.stock < item.threshold;
-                      return (
-                        <tr key={item.id} className="group transition-colors hover:bg-surface-container">
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-lg border border-outline-variant/30 bg-surface-container-high text-xl">
-                                {item.emoji}
+                    {itemsLoading && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-sm text-on-surface-variant">
+                          <Loader2 aria-hidden="true" className="mx-auto h-5 w-5 animate-spin" />
+                        </td>
+                      </tr>
+                    )}
+                    {!itemsLoading && filteredItems.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-12 text-center text-sm text-on-surface-variant">
+                          No products match this view yet.
+                        </td>
+                      </tr>
+                    )}
+                    {!itemsLoading &&
+                      filteredItems.map((item) => {
+                        const isLow = item.stock < item.threshold;
+                        const draft = thresholdDrafts[item.id] ?? String(item.threshold);
+                        return (
+                          <tr key={item.id} className="group transition-colors hover:bg-surface-container">
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-outline-variant/30 bg-surface-container-high text-xl">
+                                  {item.imageUrl ? (
+                                    // eslint-disable-next-line @next/next/no-img-element
+                                    <img src={item.imageUrl} alt={item.title} className="h-full w-full object-cover" />
+                                  ) : (
+                                    "📦"
+                                  )}
+                                </div>
+                                <div>
+                                  <p className="whitespace-nowrap font-bold text-foreground">{item.title}</p>
+                                  <p className="whitespace-nowrap text-sm text-on-surface-variant">{item.category}</p>
+                                </div>
                               </div>
-                              <div>
-                                <p className="whitespace-nowrap font-bold text-foreground">{item.name}</p>
-                                <p className="whitespace-nowrap text-sm text-on-surface-variant">{item.category}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="whitespace-nowrap px-6 py-4 text-sm text-outline">{item.sku}</td>
-                          <td className="whitespace-nowrap px-6 py-4 text-right">
-                            {isLow ? (
-                              <span className="inline-flex items-center rounded-full bg-error-container px-3 py-1 text-sm font-medium text-on-error-container">
-                                {item.stock} Units
-                              </span>
-                            ) : (
-                              <span className="text-foreground">{item.stock} Units</span>
-                            )}
-                          </td>
-                          <td className="whitespace-nowrap px-6 py-4 text-right">
-                            <input
-                              type="number"
-                              value={item.threshold}
-                              onChange={(event) => updateThreshold(item.id, Number(event.target.value))}
-                              className="w-16 rounded-lg border border-outline-variant bg-surface-container px-2 py-1 text-right text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-secondary-container"
-                            />
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <button
-                              type="button"
-                              aria-label="Save threshold"
-                              className="rounded-full p-2 text-primary transition-colors hover:bg-secondary-container/20"
-                            >
-                              <Save aria-hidden="true" className="h-5 w-5" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-sm text-outline">{item.sku ?? "—"}</td>
+                            <td className="whitespace-nowrap px-6 py-4 text-right">
+                              {isLow ? (
+                                <span className="inline-flex items-center rounded-full bg-error-container px-3 py-1 text-sm font-medium text-on-error-container">
+                                  {item.stock} Units
+                                </span>
+                              ) : (
+                                <span className="text-foreground">{item.stock} Units</span>
+                              )}
+                            </td>
+                            <td className="whitespace-nowrap px-6 py-4 text-right">
+                              <input
+                                type="number"
+                                value={draft}
+                                onChange={(event) =>
+                                  setThresholdDrafts((prev) => ({ ...prev, [item.id]: event.target.value }))
+                                }
+                                className="w-16 rounded-lg border border-outline-variant bg-surface-container px-2 py-1 text-right text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-secondary-container"
+                              />
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                type="button"
+                                aria-label="Save threshold"
+                                onClick={() => handleSaveThreshold(item)}
+                                disabled={savingThresholdId === item.id || Number(draft) === item.threshold}
+                                className="rounded-full p-2 text-primary transition-colors hover:bg-secondary-container/20 disabled:opacity-30"
+                              >
+                                {savingThresholdId === item.id ? (
+                                  <Loader2 aria-hidden="true" className="h-5 w-5 animate-spin" />
+                                ) : (
+                                  <Save aria-hidden="true" className="h-5 w-5" />
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                   </tbody>
                 </table>
               </div>
@@ -405,15 +554,26 @@ export default function VendorInventoryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant/30">
-                    {movementLog.map((entry) => (
-                      <tr key={`${entry.sku}-${entry.date}`}>
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-on-surface-variant">{entry.date}</td>
+                    {movements.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-sm text-on-surface-variant">
+                          No stock movements yet.
+                        </td>
+                      </tr>
+                    )}
+                    {movements.map((entry) => (
+                      <tr key={entry.id}>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-on-surface-variant">
+                          {formatMovementDate(entry.date)}
+                        </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm font-bold text-foreground">{entry.sku}</td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm">
-                          <span className={`font-bold ${entry.changeColor}`}>{entry.change}</span>
+                          <span className={`font-bold ${entry.change < 0 ? "text-error" : "text-primary"}`}>
+                            {entry.change > 0 ? `+${entry.change}` : entry.change}
+                          </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
-                          <span className={`rounded-full px-3 py-1 text-[11px] font-bold ${entry.reasonStyle}`}>
+                          <span className="rounded-full bg-surface-container-highest px-3 py-1 text-[11px] font-bold uppercase tracking-tighter text-on-surface-variant">
                             {entry.reason}
                           </span>
                         </td>
@@ -471,26 +631,50 @@ export default function VendorInventoryPage() {
               type="button"
               onClick={() => setIsModalOpen(false)}
               aria-label="Close"
-              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-container"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-container"
             >
               <X aria-hidden="true" className="h-5 w-5" />
             </button>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 sm:p-8">
+            {modalMessage && (
+              <div className="mb-4 rounded-xl bg-secondary-container px-4 py-3 text-sm text-on-secondary-container">
+                {modalMessage}
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
               <div className="flex flex-col gap-4">
                 <h4 className="text-xs font-semibold uppercase tracking-wider text-primary">Option 1: Import CSV</h4>
-                <div className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-outline-variant p-8 text-center transition-colors hover:border-primary">
+                <label className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-outline-variant p-8 text-center transition-colors hover:border-primary">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    className="hidden"
+                    onChange={(event) => setCsvFile(event.target.files?.[0] ?? null)}
+                  />
                   <UploadCloud
                     aria-hidden="true"
                     className="mb-4 h-12 w-12 text-outline transition-colors group-hover:text-primary"
                   />
                   <p className="text-sm text-on-surface-variant">
-                    Drop your inventory spreadsheet here or <span className="font-bold text-primary">browse</span>
+                    {csvFile ? csvFile.name : (
+                      <>
+                        Drop your inventory spreadsheet here or <span className="font-bold text-primary">browse</span>
+                      </>
+                    )}
                   </p>
-                  <p className="mt-2 text-[10px] text-outline">Supports .CSV, .XLSX (Max 5MB)</p>
-                </div>
+                  <p className="mt-2 text-[10px] text-outline">Columns: sku,change,reason</p>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleCsvImport}
+                  disabled={!csvFile || csvSaving}
+                  className="flex items-center justify-center gap-2 rounded-xl bg-secondary-container px-4 py-2 text-sm font-medium text-on-secondary-container transition-colors hover:opacity-80 disabled:opacity-40"
+                >
+                  {csvSaving && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
+                  Apply CSV Adjustments
+                </button>
               </div>
 
               <div className="flex flex-col gap-4">
@@ -498,7 +682,11 @@ export default function VendorInventoryPage() {
                 <div className="space-y-4">
                   <div className="rounded-xl bg-surface-container p-4">
                     <p className="mb-2 text-sm font-medium text-foreground">Select Warehouse</p>
-                    <select className="w-full border-none bg-transparent p-0 text-sm focus:outline-none focus:ring-0">
+                    <select
+                      value={warehouse}
+                      onChange={(event) => setWarehouse(event.target.value)}
+                      className="w-full border-none bg-transparent p-0 text-sm focus:outline-none focus:ring-0"
+                    >
                       <option>Seattle Central (Main)</option>
                       <option>Austin Distribution</option>
                       <option>New Jersey Hub</option>
@@ -506,11 +694,25 @@ export default function VendorInventoryPage() {
                   </div>
                   <div className="rounded-xl bg-surface-container p-4">
                     <p className="mb-2 text-sm font-medium text-foreground">Adjustment Action</p>
-                    <select className="w-full border-none bg-transparent p-0 text-sm focus:outline-none focus:ring-0">
-                      <option>Add Stock (Restock)</option>
-                      <option>Subtract Stock (Shrinkage)</option>
-                      <option>Reset Exact Count</option>
+                    <select
+                      value={batchAction}
+                      onChange={(event) => setBatchAction(event.target.value as StockAction)}
+                      className="w-full border-none bg-transparent p-0 text-sm focus:outline-none focus:ring-0"
+                    >
+                      <option value="add">Add Stock (Restock)</option>
+                      <option value="subtract">Subtract Stock (Shrinkage)</option>
+                      <option value="reset">Reset Exact Count</option>
                     </select>
+                  </div>
+                  <div className="rounded-xl bg-surface-container p-4">
+                    <p className="mb-2 text-sm font-medium text-foreground">Quantity (applies to all SKUs)</p>
+                    <input
+                      type="number"
+                      min={0}
+                      value={batchQuantity}
+                      onChange={(event) => setBatchQuantity(event.target.value)}
+                      className="w-full border-none bg-transparent p-0 text-sm focus:outline-none focus:ring-0"
+                    />
                   </div>
                 </div>
               </div>
@@ -527,8 +729,11 @@ export default function VendorInventoryPage() {
             </button>
             <button
               type="button"
-              className="rounded-xl bg-primary px-8 py-2 text-sm font-medium text-white shadow-lg transition-all active:scale-95"
+              onClick={handleBatchProcess}
+              disabled={batchSaving}
+              className="flex items-center justify-center gap-2 rounded-xl bg-primary px-8 py-2 text-sm font-medium text-white shadow-lg transition-all active:scale-95 disabled:opacity-50"
             >
+              {batchSaving && <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />}
               Start Batch Process
             </button>
           </div>

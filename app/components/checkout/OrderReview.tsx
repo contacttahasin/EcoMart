@@ -1,32 +1,67 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { CartItem } from "@/app/context/CartContext";
 import { useCart } from "@/app/context/CartContext";
 import { getEffectivePrice } from "@/services/product.service";
-
-const TAX_RATE = 0.08;
+import {
+  placeOrder,
+  TAX_RATE,
+  type DeliveryMethodOption,
+  type PaymentMethodOption,
+  type ShippingInfo,
+} from "@/services/order.service";
 
 type OrderReviewProps = {
   items: CartItem[];
   shippingCost: number;
+  customerId: string;
+  shipping: ShippingInfo;
+  delivery: DeliveryMethodOption;
+  paymentMethod: PaymentMethodOption;
 };
 
-export function OrderReview({ items, shippingCost }: OrderReviewProps) {
+export function OrderReview({ items, shippingCost, customerId, shipping, delivery, paymentMethod }: OrderReviewProps) {
   const { clearCart } = useCart();
   const router = useRouter();
   const [promoCode, setPromoCode] = useState("");
+  const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const subtotal = items.reduce((sum, item) => sum + getEffectivePrice(item.product) * item.quantity, 0);
   const tax = subtotal * TAX_RATE;
   const total = subtotal + shippingCost + tax;
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
+    setError(null);
+
+    if (
+      !shipping.fullName.trim() ||
+      !shipping.email.trim() ||
+      !shipping.phone.trim() ||
+      !shipping.street.trim() ||
+      !shipping.city.trim() ||
+      !shipping.state.trim() ||
+      !shipping.zipCode.trim()
+    ) {
+      setError("Please fill in all shipping fields before placing your order.");
+      return;
+    }
+
+    setIsPlacingOrder(true);
+    const result = await placeOrder(customerId, items, shipping, delivery, paymentMethod, shippingCost);
+    setIsPlacingOrder(false);
+
+    if (!result.success) {
+      setError(result.error);
+      return;
+    }
+
     clearCart();
-    router.push("/");
+    router.push("/account/orders");
   };
 
   return (
@@ -85,13 +120,29 @@ export function OrderReview({ items, shippingCost }: OrderReviewProps) {
         </button>
       </div>
 
+      {error && (
+        <p role="alert" className="mb-3 text-sm font-medium text-error">
+          {error}
+        </p>
+      )}
+
       <button
         type="button"
         onClick={handlePlaceOrder}
-        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3.5 text-base font-semibold text-white shadow-lg transition-all duration-300 ease-out hover:scale-[1.02] hover:bg-on-surface-variant active:scale-95"
+        disabled={isPlacingOrder}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary py-3.5 text-base font-semibold text-white shadow-lg transition-all duration-300 ease-out hover:scale-[1.02] hover:bg-on-surface-variant active:scale-95 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:scale-100"
       >
-        Place Order
-        <ChevronRight aria-hidden="true" className="h-4 w-4" />
+        {isPlacingOrder ? (
+          <>
+            <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+            Placing Order...
+          </>
+        ) : (
+          <>
+            Place Order
+            <ChevronRight aria-hidden="true" className="h-4 w-4" />
+          </>
+        )}
       </button>
 
       <p className="mt-4 text-center text-sm text-on-surface-variant">

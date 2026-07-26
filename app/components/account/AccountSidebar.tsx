@@ -40,7 +40,7 @@ export function AccountSidebar({ customer }: AccountSidebarProps) {
           )}
         </div>
         <h3 className="text-lg font-semibold text-primary">{customer.name}</h3>
-        <p className="text-sm text-on-surface-variant">Premium Member</p>
+        <p className="text-sm text-on-surface-variant">Member since {new Date(customer.joinedDate).getFullYear()}</p>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">

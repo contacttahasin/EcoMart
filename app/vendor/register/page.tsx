@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useVendorAuth } from "@/app/context/VendorAuthContext";
 import { useVendors } from "@/app/context/VendorContext";
 import { MerchantMinimalHeader } from "@/app/components/vendor/register/MerchantMinimalHeader";
 import { MerchantPortalHeader } from "@/app/components/vendor/register/MerchantPortalHeader";
@@ -19,7 +18,6 @@ export default function VendorRegisterPage() {
   const [data, setData] = useState<Partial<VendorRegistrationData>>({});
   const [submittedVendor, setSubmittedVendor] = useState<Vendor | null>(null);
   const { addVendor } = useVendors();
-  const { signup } = useVendorAuth();
   const year = new Date().getFullYear();
 
   const handleSubmitApplication = async (
@@ -33,19 +31,10 @@ export default function VendorRegisterPage() {
       return { success: false, error: "Something went wrong — please restart your application." };
     }
 
-    const signupResult = signup({
-      fullName: data.personal.fullLegalName,
-      businessName: data.personal.businessName,
-      email: data.personal.email,
-      phone: data.personal.phone,
-      password: data.personal.password,
-    });
-
-    if (!signupResult.success) {
-      return signupResult;
-    }
-
-    const vendor = addVendor({ personal: data.personal, business: data.business });
+    // The account itself was already created and email-verified back in
+    // Step 1 (see Step1.tsx's OTP flow) — this just finalizes the business
+    // profile on top of that already-authenticated session.
+    const vendor = await addVendor({ personal: data.personal, business: data.business });
     setSubmittedVendor(vendor);
     return { success: true };
   };

@@ -1,9 +1,18 @@
 "use client";
 
 import { ChevronDown, Download, Package, RefreshCw } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import type { Order, OrderStatus } from "@/data/orders";
-import { formatOrderDate, STATUS_BADGE } from "@/services/order.service";
+import { useCart } from "@/app/context/CartContext";
+import { getProductsByIds } from "@/services/product.service";
+import {
+  fetchOrderStatusHistory,
+  formatOrderDate,
+  STATUS_BADGE,
+  type OrderStatus,
+  type OrderStatusEvent,
+  type RealOrder,
+} from "@/services/order.service";
 
 const TABS: { label: string; value: OrderStatus | "all" }[] = [
   { label: "All", value: "all" },
@@ -16,15 +25,78 @@ const TABS: { label: string; value: OrderStatus | "all" }[] = [
 const PAGE_SIZE = 3;
 
 type OrdersPageClientProps = {
-  orders: Order[];
+  orders: RealOrder[];
 };
+
+function buildInvoiceHtml(order: RealOrder): string {
+  const rows = order.items
+    .map(
+      (item) =>
+        `<tr><td>${item.title}</td><td style="text-align:center">${item.quantity}</td><td style="text-align:right">$${item.unitPrice.toFixed(2)}</td><td style="text-align:right">$${(item.unitPrice * item.quantity).toFixed(2)}</td></tr>`
+    )
+    .join("");
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><title>Invoice ${order.orderNumber}</title>
+<style>body{font-family:sans-serif;padding:2rem;color:#222}table{width:100%;border-collapse:collapse;margin-top:1.5rem}th,td{padding:8px;border-bottom:1px solid #ddd}th{text-align:left}h1{color:#0f7a4f}</style>
+</head><body>
+<h1>EcoMarket</h1>
+<h2>Invoice</h2>
+<p><strong>Order #${order.orderNumber}</strong><br/>Placed on ${formatOrderDate(order.placedAt)}</p>
+<table>
+<thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th>Total</th></tr></thead>
+<tbody>${rows}</tbody>
+</table>
+<p style="text-align:right;font-size:1.1rem;margin-top:1rem"><strong>Grand Total: $${order.totalAmount.toFixed(2)}</strong></p>
+</body></html>`;
+}
+
+function downloadInvoice(order: RealOrder) {
+  const blob = new Blob([buildInvoiceHtml(order)], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `invoice-${order.orderNumber}.html`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export function OrdersPageClient({ orders }: OrdersPageClientProps) {
   const [activeTab, setActiveTab] = useState<OrderStatus | "all">("all");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+  const [statusHistory, setStatusHistory] = useState<OrderStatusEvent[]>([]);
+  const [isBuyingAgainId, setIsBuyingAgainId] = useState<string | null>(null);
+  const { addItem } = useCart();
+  const router = useRouter();
 
   const filtered = activeTab === "all" ? orders : orders.filter((order) => order.status === activeTab);
   const visible = filtered.slice(0, visibleCount);
+
+  const handleViewDetails = (orderId: string) => {
+    setExpandedOrderId((current) => (current === orderId ? null : orderId));
+  };
+
+  const handleTrackOrder = async (orderId: string) => {
+    if (expandedOrderId === orderId) {
+      setExpandedOrderId(null);
+      return;
+    }
+    setExpandedOrderId(orderId);
+    setStatusHistory(await fetchOrderStatusHistory(orderId));
+  };
+
+  const handleBuyAgain = async (order: RealOrder) => {
+    setIsBuyingAgainId(order.id);
+    const productIds = order.items.map((item) => item.productId).filter((id): id is string => id !== null);
+    const products = await getProductsByIds(productIds);
+    for (const item of order.items) {
+      const product = products.find((candidate) => candidate.id === item.productId);
+      if (product) addItem(product, item.quantity);
+    }
+    setIsBuyingAgainId(null);
+    router.push("/cart");
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -61,6 +133,8 @@ export function OrdersPageClient({ orders }: OrdersPageClientProps) {
         {visible.map((order) => {
           const badge = STATUS_BADGE[order.status];
           const BadgeIcon = badge.icon;
+          const [firstItem, ...restItems] = order.items;
+          const isExpanded = expandedOrderId === order.id;
 
           return (
             <div
@@ -75,7 +149,14 @@ export function OrdersPageClient({ orders }: OrdersPageClientProps) {
                 <div className="flex flex-1 flex-col gap-1">
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h4 className="text-lg font-semibold text-foreground">{order.productName}</h4>
+                      <h4 className="text-lg font-semibold text-foreground">
+                        {firstItem?.title ?? "Order"}
+                        {restItems.length > 0 && (
+                          <span className="ml-1 text-sm font-normal text-on-surface-variant">
+                            +{restItems.length} more
+                          </span>
+                        )}
+                      </h4>
                       <p className="text-sm text-on-surface-variant">
                         Order ID: <span className="font-bold text-foreground">#{order.orderNumber}</span>
                       </p>
@@ -91,20 +172,52 @@ export function OrdersPageClient({ orders }: OrdersPageClientProps) {
                   <div className="mt-2 grid grid-cols-2 gap-4 md:grid-cols-3">
                     <div>
                       <p className="text-xs text-outline">Placed On</p>
-                      <p className="text-sm text-foreground">{formatOrderDate(order.placedOn)}</p>
+                      <p className="text-sm text-foreground">{formatOrderDate(order.placedAt)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-outline">Total Price</p>
-                      <p className="text-sm font-bold text-foreground">${order.totalPrice.toFixed(2)}</p>
+                      <p className="text-sm font-bold text-foreground">${order.totalAmount.toFixed(2)}</p>
                     </div>
                   </div>
                 </div>
               </div>
 
+              {isExpanded && (
+                <div className="mt-4 space-y-3 rounded-xl bg-surface-container-low p-4">
+                  <div className="space-y-2">
+                    {order.items.map((item) => (
+                      <div key={item.id} className="flex justify-between text-sm text-on-surface-variant">
+                        <span>
+                          {item.title} × {item.quantity}
+                        </span>
+                        <span className="font-medium text-foreground">
+                          ${(item.unitPrice * item.quantity).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {statusHistory.length > 0 && (
+                    <div className="border-t border-outline-variant/50 pt-3">
+                      <p className="mb-2 text-xs font-semibold uppercase text-outline">Order Timeline</p>
+                      <div className="space-y-1.5">
+                        {statusHistory.map((event) => (
+                          <div key={event.id} className="flex justify-between text-xs text-on-surface-variant">
+                            <span>{event.note ?? event.status}</span>
+                            <span>{formatOrderDate(event.createdAt)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-outline-variant pt-4">
                 <div className="flex gap-4">
                   <button
                     type="button"
+                    onClick={() => downloadInvoice(order)}
                     className="flex items-center gap-1 text-sm font-medium text-primary hover:underline"
                   >
                     <Download aria-hidden="true" className="h-4 w-4" />
@@ -113,7 +226,9 @@ export function OrdersPageClient({ orders }: OrdersPageClientProps) {
                   {order.status === "delivered" && (
                     <button
                       type="button"
-                      className="flex items-center gap-1 text-sm font-medium text-on-surface-variant transition-colors hover:text-primary"
+                      onClick={() => handleBuyAgain(order)}
+                      disabled={isBuyingAgainId === order.id}
+                      className="flex items-center gap-1 text-sm font-medium text-on-surface-variant transition-colors hover:text-primary disabled:opacity-50"
                     >
                       <RefreshCw aria-hidden="true" className="h-4 w-4" />
                       Buy Again
@@ -124,17 +239,19 @@ export function OrdersPageClient({ orders }: OrdersPageClientProps) {
                 {order.status === "shipped" && (
                   <button
                     type="button"
+                    onClick={() => handleTrackOrder(order.id)}
                     className="rounded-lg bg-primary px-6 py-2 text-sm font-bold text-white transition-all hover:bg-secondary active:scale-95"
                   >
-                    Track Order
+                    {isExpanded ? "Hide Tracking" : "Track Order"}
                   </button>
                 )}
                 {order.status === "delivered" && (
                   <button
                     type="button"
+                    onClick={() => handleViewDetails(order.id)}
                     className="rounded-lg border border-primary px-6 py-2 text-sm font-bold text-primary transition-all hover:bg-surface-container-low active:scale-95"
                   >
-                    View Details
+                    {isExpanded ? "Hide Details" : "View Details"}
                   </button>
                 )}
                 {order.status === "processing" && (

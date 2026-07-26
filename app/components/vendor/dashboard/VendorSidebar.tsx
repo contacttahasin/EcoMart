@@ -59,7 +59,7 @@ export function VendorSidebar({ isOpen, onClose }: VendorSidebarProps) {
         }`}
       >
         <div className="mb-10 flex items-center justify-between px-2">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-on-primary">
               <Leaf aria-hidden="true" className="h-5 w-5" />
             </div>
@@ -67,7 +67,7 @@ export function VendorSidebar({ isOpen, onClose }: VendorSidebarProps) {
               <h1 className="text-lg font-bold text-primary">EcoMart</h1>
               <p className="text-xs font-medium text-on-surface-variant">Vendor Admin</p>
             </div>
-          </div>
+          </Link>
           <button
             type="button"
             aria-label="Close menu"

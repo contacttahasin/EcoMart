@@ -19,7 +19,7 @@ export default function AddressesPage() {
         <AccountSidebar customer={customer} />
 
         <main className="w-full py-12 pb-24 md:ml-64 md:pb-12">
-          <AddressesPageClient initialAddresses={customer.addresses} />
+          <AddressesPageClient customerId={customer.id} />
         </main>
       </div>
 

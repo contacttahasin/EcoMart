@@ -3,20 +3,15 @@
 import {
   ArrowLeft,
   BadgeCheck,
-  Building2,
   Camera,
   CheckCircle2,
   Info,
   Lock,
-  Paperclip,
   ScanFace,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import type { VendorVerificationInfo } from "@/app/types/vendor";
 import { DocumentDropzone } from "./DocumentDropzone";
-
-const inputClass =
-  "w-full rounded-lg border border-outline-variant bg-white px-4 py-3 text-sm text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-secondary-container/50";
 
 type Step3Props = {
   initialData?: Partial<VendorVerificationInfo>;
@@ -27,17 +22,10 @@ type Step3Props = {
 export function Step3({ initialData, onNext, onBack }: Step3Props) {
   const [idFrontFileName, setIdFrontFileName] = useState(initialData?.idFrontFileName ?? null);
   const [idBackFileName, setIdBackFileName] = useState(initialData?.idBackFileName ?? null);
-  const [businessRegistrationFileName, setBusinessRegistrationFileName] = useState(
-    initialData?.businessRegistrationFileName ?? null
-  );
-  const [tradeLicenseNumber, setTradeLicenseNumber] = useState(initialData?.tradeLicenseNumber ?? "");
-  const [tin, setTin] = useState(initialData?.tin ?? "");
   const [selfieCaptured, setSelfieCaptured] = useState(initialData?.selfieCaptured ?? false);
   const [selfieStatus, setSelfieStatus] = useState("Place your face within the frame and click to capture");
   const [selfiePending, setSelfiePending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const businessRegInputRef = useRef<HTMLInputElement>(null);
 
   const handleCaptureSelfie = () => {
     if (selfiePending) return;
@@ -62,9 +50,6 @@ export function Step3({ initialData, onNext, onBack }: Step3Props) {
     onNext({
       idFrontFileName,
       idBackFileName,
-      businessRegistrationFileName,
-      tradeLicenseNumber,
-      tin,
       selfieCaptured,
     });
   };
@@ -98,71 +83,6 @@ export function Step3({ initialData, onNext, onBack }: Step3Props) {
                 fileName={idBackFileName}
                 onFileSelected={setIdBackFileName}
               />
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)]">
-            <div className="mb-6 flex items-center gap-2">
-              <Building2 aria-hidden="true" className="h-5 w-5 text-primary" />
-              <h2 className="text-xl font-semibold text-foreground">Business &amp; Tax Details</h2>
-            </div>
-            <div className="space-y-6">
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="trade-license" className="text-sm font-medium text-on-surface-variant">
-                    Trade License Number
-                  </label>
-                  <input
-                    id="trade-license"
-                    type="text"
-                    placeholder="e.g. TL-8829-2024"
-                    value={tradeLicenseNumber}
-                    onChange={(event) => setTradeLicenseNumber(event.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="tin" className="text-sm font-medium text-on-surface-variant">
-                    TIN (Tax ID Number)
-                  </label>
-                  <input
-                    id="tin"
-                    type="text"
-                    placeholder="12-3456789"
-                    value={tin}
-                    onChange={(event) => setTin(event.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4">
-                <p className="flex-1 text-sm text-on-surface-variant">
-                  {businessRegistrationFileName ?? "Upload a clear copy of your official Business Registration certificate."}
-                </p>
-                <input
-                  ref={businessRegInputRef}
-                  type="file"
-                  accept="image/*,.pdf"
-                  className="hidden"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) setBusinessRegistrationFileName(file.name);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => businessRegInputRef.current?.click()}
-                  className="flex h-10 shrink-0 items-center gap-1.5 rounded-lg bg-secondary px-4 text-sm font-medium text-white transition-opacity hover:opacity-90"
-                >
-                  {businessRegistrationFileName ? (
-                    <CheckCircle2 aria-hidden="true" className="h-4 w-4" />
-                  ) : (
-                    <Paperclip aria-hidden="true" className="h-4 w-4" />
-                  )}
-                  {businessRegistrationFileName ? "Uploaded" : "Upload File"}
-                </button>
-              </div>
             </div>
           </div>
         </div>

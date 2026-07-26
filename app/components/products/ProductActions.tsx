@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { memo, useState } from "react";
 import type { Product } from "@/data/products";
 import { useCart } from "@/app/context/CartContext";
+import { useWishlist } from "@/app/context/WishlistContext";
 
 type ProductActionsProps = {
   product: Product;
@@ -24,8 +25,9 @@ function ProductActionsComponent({
   productUrl,
 }: ProductActionsProps) {
   const { items, addItem } = useCart();
+  const { isWishlisted, toggle } = useWishlist();
   const router = useRouter();
-  const [wishlisted, setWishlisted] = useState(false);
+  const wishlisted = isWishlisted(product.id);
   const [compared, setCompared] = useState(false);
   const outOfStock = stock <= 0;
   const isInCart = items.some((item) => item.product.id === product.id);
@@ -122,7 +124,7 @@ function ProductActionsComponent({
           type="button"
           aria-pressed={wishlisted}
           aria-label={wishlisted ? "Remove from wishlist" : "Add to wishlist"}
-          onClick={() => setWishlisted((prev) => !prev)}
+          onClick={() => toggle(product)}
           className="flex h-11 w-11 items-center justify-center rounded-full border border-outline-variant text-on-surface-variant transition-all duration-300 ease-out hover:scale-105 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <Heart aria-hidden="true" className={`h-4 w-4 ${wishlisted ? "fill-primary text-primary" : ""}`} />

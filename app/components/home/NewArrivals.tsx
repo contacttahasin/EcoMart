@@ -1,17 +1,21 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Heart, ShoppingCart } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { CATEGORIES, products, type Product } from "@/data/products";
+import { CATEGORIES, type Product } from "@/data/products";
 import { useCart } from "@/app/context/CartContext";
+import { useWishlist } from "@/app/context/WishlistContext";
+import { getProducts } from "@/services/product.service";
 
 const FILTERS = ["All", ...CATEGORIES] as const;
 type Filter = (typeof FILTERS)[number];
 
 function ProductCard({ product }: { product: Product }) {
   const { addItem } = useCart();
+  const { isWishlisted, toggle } = useWishlist();
+  const wishlisted = isWishlisted(product.id);
 
   return (
     <div className="group flex flex-col overflow-hidden rounded-2xl bg-white shadow-md transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl">
@@ -32,10 +36,12 @@ function ProductCard({ product }: { product: Product }) {
 
         <button
           type="button"
-          aria-label={`Add ${product.title} to wishlist`}
+          aria-label={wishlisted ? `Remove ${product.title} from wishlist` : `Add ${product.title} to wishlist`}
+          aria-pressed={wishlisted}
+          onClick={() => toggle(product)}
           className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white text-on-surface-variant shadow-md transition-transform duration-300 ease-out hover:text-primary group-hover:scale-110"
         >
-          <Heart className="h-4 w-4" />
+          <Heart className={`h-4 w-4 ${wishlisted ? "fill-primary text-primary" : ""}`} />
         </button>
       </div>
 
@@ -70,11 +76,17 @@ function ProductCard({ product }: { product: Product }) {
 
 export default function NewArrivals() {
   const [activeFilter, setActiveFilter] = useState<Filter>("All");
+  const [newArrivals, setNewArrivals] = useState<Product[]>([]);
 
-  const newArrivals = useMemo(
-    () => products.filter((product) => product.status === "active" && product.newArrival),
-    []
-  );
+  useEffect(() => {
+    let cancelled = false;
+    getProducts({ limit: 500, sort: "newest-arrivals" }).then((result) => {
+      if (!cancelled) setNewArrivals(result.products.filter((product) => product.newArrival));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const visibleProducts = useMemo(
     () =>

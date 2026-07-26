@@ -3,28 +3,39 @@
 import { Zap } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/layout/Footer";
 import { CountdownTimer } from "@/app/components/deals/CountdownTimer";
 import { DealCategoryTabs } from "@/app/components/deals/DealCategoryTabs";
 import { FlashDealCard } from "@/app/components/deals/FlashDealCard";
 import { PromoCodeBanner } from "@/app/components/deals/PromoCodeBanner";
-import { CATEGORIES, products } from "@/data/products";
+import { CATEGORIES, type Product } from "@/data/products";
+import { getProducts } from "@/services/product.service";
 
 const ALL_DEALS = "All Deals";
 const CATEGORY_TABS = [ALL_DEALS, ...CATEGORIES];
 
 export default function DealsPage() {
   const [activeCategory, setActiveCategory] = useState(ALL_DEALS);
+  const [dealProducts, setDealProducts] = useState<Product[]>([]);
 
-  const dealProducts = useMemo(
-    () =>
-      products
-        .filter((product) => product.status === "active" && product.discount > 0 && product.stock > 0)
-        .sort((a, b) => b.discount - a.discount || b.rating - a.rating),
-    []
-  );
+  useEffect(() => {
+    let cancelled = false;
+
+    getProducts({ limit: 500 }).then((result) => {
+      if (cancelled) return;
+      setDealProducts(
+        result.products
+          .filter((product) => product.discount > 0 && product.stock > 0)
+          .sort((a, b) => b.discount - a.discount || b.rating - a.rating)
+      );
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const visibleDeals = useMemo(
     () =>

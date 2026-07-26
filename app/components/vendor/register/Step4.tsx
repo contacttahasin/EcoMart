@@ -106,10 +106,6 @@ export function Step4({ registrationData, initialData, onSubmit }: Step4Props) {
               <dt className="text-xs font-medium text-on-surface-variant">Warehouse / Store Address</dt>
               <dd className="text-sm font-medium text-foreground">{business.address}</dd>
             </div>
-            <SummaryItem
-              label="Trade License"
-              value={business.tradeLicenseFileName ? `Uploaded — ${business.tradeLicenseFileName}` : "Not uploaded"}
-            />
             <SummaryItem label="Face ID Verification" value={verification.selfieCaptured ? "Verified" : "Not completed"} />
           </dl>
 

@@ -1,15 +1,14 @@
 "use client";
 
 import { Search, Zap } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Navbar from "@/app/components/Navbar";
 import Footer from "@/app/components/layout/Footer";
 import ProductFilters from "@/app/components/products/ProductFilters";
 import ProductGrid from "@/app/components/products/ProductGrid";
 import { DEFAULT_PRODUCT_FILTERS } from "@/app/hooks/useProductFilters";
-import type { ProductFiltersState } from "@/app/components/products/filters/types";
-import { products } from "@/data/products";
-import { vendors } from "@/data/vendors";
+import type { ProductFiltersState, VendorOption } from "@/app/components/products/filters/types";
+import { getVendorsForCategory } from "@/services/product.service";
 
 const CATEGORY_OPTIONS = [
   { id: "vegetables", label: "Vegetables" },
@@ -22,17 +21,21 @@ const CATEGORY_OPTIONS = [
 
 const PILLS = [{ id: "all", label: "All Essentials" }, ...CATEGORY_OPTIONS];
 
-const GROCERY_VENDOR_IDS = new Set(
-  products.filter((product) => product.category === "Fresh Produce").map((product) => product.vendorId)
-);
-const VENDOR_OPTIONS = vendors
-  .filter((vendor) => GROCERY_VENDOR_IDS.has(vendor.id))
-  .map((vendor) => ({ id: vendor.id, label: vendor.name }));
-
 export default function GroceriesPage() {
   const [filters, setFilters] = useState<ProductFiltersState>(DEFAULT_PRODUCT_FILTERS);
   const [activePill, setActivePill] = useState("all");
   const [search, setSearch] = useState("");
+  const [vendorOptions, setVendorOptions] = useState<VendorOption[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getVendorsForCategory("Fresh Produce").then((options) => {
+      if (!cancelled) setVendorOptions(options);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePillClick = (id: string) => {
     setActivePill(id);
@@ -98,7 +101,7 @@ export default function GroceriesPage() {
         </section>
 
         <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
-          <ProductFilters categoryOptions={CATEGORY_OPTIONS} vendorOptions={VENDOR_OPTIONS} onChange={handleFiltersChange} />
+          <ProductFilters categoryOptions={CATEGORY_OPTIONS} vendorOptions={vendorOptions} onChange={handleFiltersChange} />
 
           <div className="min-w-0 flex-1">
             <h1 className="mb-6 text-3xl font-bold text-foreground sm:text-4xl">Grocery Essentials</h1>

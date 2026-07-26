@@ -1,20 +1,47 @@
 "use client";
 
 import {
+  AlertTriangle,
   BadgeCheck,
   Camera,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   KeyRound,
-  Leaf,
+  Laptop,
   Loader2,
-  Recycle,
+  LogOut,
   Save,
+  Shield,
+  ShieldCheck,
+  Smartphone,
+  Trash2,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/context/AuthContext";
 import type { Customer } from "@/data/customers";
+import { formatRelativeTime } from "@/lib/format";
+import { getPasswordStrengthError } from "@/services/validation.service";
+import {
+  changePassword,
+  deleteAccount,
+  enrollTwoFactor,
+  fetchAccountSecurityInfo,
+  fetchActiveSessions,
+  fetchLoginActivity,
+  fetchNotificationPreferences,
+  listTwoFactorFactors,
+  signOutOtherSessions,
+  unenrollTwoFactor,
+  updateNotificationPreferences,
+  uploadAvatar,
+  verifyTwoFactorEnrollment,
+  type LoginActivityEntry,
+  type NotificationPreferences,
+  type SessionEntry,
+} from "@/services/account.service";
 
 const inputClass =
   "h-12 w-full rounded-lg border border-outline-variant bg-white px-4 text-sm text-foreground outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20";
@@ -31,14 +58,8 @@ type PasswordForm = {
   confirm: string;
 };
 
-type NotificationPrefs = {
-  orderUpdates: boolean;
-  ecoTips: boolean;
-  securityAlerts: boolean;
-};
-
 const EMPTY_PASSWORD: PasswordForm = { current: "", next: "", confirm: "" };
-const DEFAULT_NOTIFICATIONS: NotificationPrefs = { orderUpdates: true, ecoTips: false, securityAlerts: true };
+const DEFAULT_NOTIFICATIONS: NotificationPreferences = { orderUpdates: true, ecoTips: false, securityAlerts: true };
 
 type SaveState = "idle" | "saving" | "saved";
 
@@ -48,40 +69,153 @@ function toProfileForm(customer: Customer): ProfileForm {
 
 export function SettingsPageClient({ customer }: { customer: Customer }) {
   const { updateProfile } = useAuth();
+  const router = useRouter();
   const [profile, setProfile] = useState<ProfileForm>(toProfileForm(customer));
   const [password, setPassword] = useState<PasswordForm>(EMPTY_PASSWORD);
-  const [notifications, setNotifications] = useState<NotificationPrefs>(DEFAULT_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationPreferences>(DEFAULT_NOTIFICATIONS);
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [formError, setFormError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [loginActivity, setLoginActivity] = useState<LoginActivityEntry[]>([]);
+  const [signingOutOthers, setSigningOutOthers] = useState(false);
+
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorEnrollment, setTwoFactorEnrollment] = useState<{
+    factorId: string;
+    qrCode: string;
+    secret: string;
+  } | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState<string | null>(null);
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  useEffect(() => {
+    fetchAccountSecurityInfo(customer.id).then((info) => {
+      if (info) setEmailVerified(info.emailVerified);
+    });
+    fetchNotificationPreferences(customer.id).then((prefs) => {
+      if (prefs) setNotifications(prefs);
+    });
+    fetchActiveSessions(customer.id).then(setSessions);
+    fetchLoginActivity(customer.id).then(setLoginActivity);
+    listTwoFactorFactors().then((factors) => setTwoFactorEnabled(factors.some((f) => f.status === "verified")));
+  }, [customer.id]);
 
   const handleDiscard = () => {
     setProfile(toProfileForm(customer));
     setPassword(EMPTY_PASSWORD);
-    setNotifications(DEFAULT_NOTIFICATIONS);
+    setFormError(null);
   };
 
-  const handleAvatarChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        updateProfile({ avatar: reader.result });
-      }
-    };
-    reader.readAsDataURL(file);
+    const publicUrl = await uploadAvatar(customer.id, file);
+    await updateProfile({ avatar: publicUrl });
   };
 
-  const handleSave = (event: React.FormEvent) => {
+  const handleSave = async (event: React.FormEvent) => {
     event.preventDefault();
+    setFormError(null);
+
+    if (password.next || password.confirm || password.current) {
+      if (!password.current) {
+        setFormError("Enter your current password to set a new one.");
+        return;
+      }
+      const passwordError = getPasswordStrengthError(password.next);
+      if (passwordError) {
+        setFormError(passwordError);
+        return;
+      }
+      if (password.next !== password.confirm) {
+        setFormError("New password and confirmation do not match.");
+        return;
+      }
+    }
+
     setSaveState("saving");
-    updateProfile({ name: profile.fullName, email: profile.email, phone: profile.phone });
-    setTimeout(() => {
-      setSaveState("saved");
-      setTimeout(() => setSaveState("idle"), 3000);
-    }, 1000);
+
+    if (password.next) {
+      const result = await changePassword(profile.email, password.current, password.next);
+      if (!result.success) {
+        setFormError(result.error);
+        setSaveState("idle");
+        return;
+      }
+      setPassword(EMPTY_PASSWORD);
+    }
+
+    await updateProfile({ name: profile.fullName, email: profile.email, phone: profile.phone });
+    await updateNotificationPreferences(customer.id, notifications);
+
+    setSaveState("saved");
+    setTimeout(() => setSaveState("idle"), 3000);
+  };
+
+  const handleSignOutOtherSessions = async () => {
+    setSigningOutOthers(true);
+    await signOutOtherSessions();
+    setSessions(await fetchActiveSessions(customer.id));
+    setSigningOutOthers(false);
+  };
+
+  const handleStartTwoFactorEnrollment = async () => {
+    setTwoFactorError(null);
+    setTwoFactorBusy(true);
+    try {
+      const data = await enrollTwoFactor();
+      setTwoFactorEnrollment({ factorId: data.id, qrCode: data.totp.qr_code, secret: data.totp.secret });
+    } catch (error) {
+      setTwoFactorError(error instanceof Error ? error.message : "Could not start enrollment.");
+    }
+    setTwoFactorBusy(false);
+  };
+
+  const handleVerifyTwoFactor = async () => {
+    if (!twoFactorEnrollment) return;
+    setTwoFactorBusy(true);
+    setTwoFactorError(null);
+    const result = await verifyTwoFactorEnrollment(customer.id, twoFactorEnrollment.factorId, twoFactorCode);
+    if (!result.success) {
+      setTwoFactorError(result.error);
+      setTwoFactorBusy(false);
+      return;
+    }
+    setTwoFactorEnabled(true);
+    setTwoFactorEnrollment(null);
+    setTwoFactorCode("");
+    setTwoFactorBusy(false);
+  };
+
+  const handleDisableTwoFactor = async () => {
+    setTwoFactorBusy(true);
+    const factors = await listTwoFactorFactors();
+    const verified = factors.find((f) => f.status === "verified");
+    if (verified) {
+      await unenrollTwoFactor(customer.id, verified.id);
+      setTwoFactorEnabled(false);
+    }
+    setTwoFactorBusy(false);
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    const result = await deleteAccount();
+    if (result.success) {
+      router.push("/");
+      return;
+    }
+    setFormError(result.error);
+    setDeleting(false);
+    setDeleteConfirmOpen(false);
   };
 
   return (
@@ -91,14 +225,20 @@ export function SettingsPageClient({ customer }: { customer: Customer }) {
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Account Settings</h1>
           <p className="text-on-surface-variant">Manage your profile information and security preferences.</p>
         </div>
-        <span className="hidden shrink-0 items-center gap-1 rounded-full bg-tertiary-container px-3 py-1 text-xs font-semibold text-on-tertiary-container sm:inline-flex">
+        <span
+          className={`hidden shrink-0 items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold sm:inline-flex ${
+            emailVerified
+              ? "bg-tertiary-container text-on-tertiary-container"
+              : "bg-error-container text-on-error-container"
+          }`}
+        >
           <BadgeCheck aria-hidden="true" className="h-4 w-4" />
-          Verified Account
+          {emailVerified ? "Verified Account" : "Email Unverified"}
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <section className="flex flex-col gap-6 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] lg:col-span-2">
+        <section className="flex flex-col gap-6 rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] lg:col-span-3">
           <div className="flex items-center gap-4">
             <div className="relative">
               <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-full border-4 border-surface-container-high bg-secondary-container text-2xl font-semibold text-primary">
@@ -171,48 +311,12 @@ export function SettingsPageClient({ customer }: { customer: Customer }) {
           </div>
         </section>
 
-        <section className="flex flex-col justify-between rounded-2xl bg-primary-container p-6 text-white shadow-md">
-          <div>
-            <h3 className="mb-1 text-lg font-semibold">Eco-Impact</h3>
-            <p className="mb-4 text-sm opacity-90">
-              Your contributions since joining in {new Date(customer.joinedDate).getFullYear()}.
-            </p>
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-white/10 p-2">
-                  <Leaf aria-hidden="true" className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wider opacity-70">Carbon Saved</p>
-                  <p className="text-lg font-semibold">124kg CO2</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <div className="rounded-lg bg-white/10 p-2">
-                  <Recycle aria-hidden="true" className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-wider opacity-70">Items Recycled</p>
-                  <p className="text-lg font-semibold">48 Units</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="mt-6 rounded-xl border border-white/10 bg-white/10 p-4">
-            <p className="mb-2 text-sm font-medium">Member Level: Platinum</p>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-black/20">
-              <div className="h-full w-[85%] rounded-full bg-white shadow-[0_0_8px_rgba(255,255,255,0.5)]" />
-            </div>
-          </div>
-        </section>
-
         <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] lg:col-span-2">
           <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <KeyRound aria-hidden="true" className="h-5 w-5 text-primary" />
               <h2 className="text-lg font-semibold text-foreground">Change Password</h2>
             </div>
-            <span className="text-xs italic text-on-surface-variant">Last changed 3 months ago</span>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -269,6 +373,7 @@ export function SettingsPageClient({ customer }: { customer: Customer }) {
               />
             </div>
           </div>
+          {formError && <p className="mt-4 text-sm font-medium text-error">{formError}</p>}
         </section>
 
         <section className="rounded-2xl border border-outline-variant/20 bg-surface-container p-6 shadow-sm">
@@ -300,6 +405,195 @@ export function SettingsPageClient({ customer }: { customer: Customer }) {
               </label>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] lg:col-span-2">
+          <div className="mb-6 flex items-center gap-2">
+            <Shield aria-hidden="true" className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Two-Factor Authentication</h2>
+          </div>
+
+          {twoFactorEnabled ? (
+            <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-tertiary/20 bg-tertiary-container/10 p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck aria-hidden="true" className="h-5 w-5 text-tertiary" />
+                <p className="text-sm font-medium text-foreground">Two-factor authentication is enabled.</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDisableTwoFactor}
+                disabled={twoFactorBusy}
+                className="rounded-lg border border-error px-4 py-2 text-sm font-medium text-error transition-colors hover:bg-error/5"
+              >
+                Disable
+              </button>
+            </div>
+          ) : twoFactorEnrollment ? (
+            <div className="flex flex-col gap-4 sm:flex-row">
+              <div className="flex flex-col items-center gap-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={twoFactorEnrollment.qrCode}
+                  alt="Two-factor authentication QR code"
+                  className="h-40 w-40 rounded-lg border border-outline-variant bg-white p-2"
+                />
+                <p className="text-center text-xs text-on-surface-variant">
+                  Or enter manually: <span className="font-mono">{twoFactorEnrollment.secret}</span>
+                </p>
+              </div>
+              <div className="flex flex-1 flex-col justify-center gap-3">
+                <label htmlFor="two-factor-code" className="text-sm font-medium text-on-surface-variant">
+                  Enter the 6-digit code from your authenticator app
+                </label>
+                <input
+                  id="two-factor-code"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={twoFactorCode}
+                  onChange={(event) => setTwoFactorCode(event.target.value.replace(/\D/g, ""))}
+                  className={`${inputClass} max-w-50 text-center tracking-[0.3em]`}
+                />
+                {twoFactorError && <p className="text-sm font-medium text-error">{twoFactorError}</p>}
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleVerifyTwoFactor}
+                    disabled={twoFactorBusy || twoFactorCode.length !== 6}
+                    className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-container disabled:opacity-50"
+                  >
+                    Verify &amp; Enable
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTwoFactorEnrollment(null)}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <p className="text-sm text-on-surface-variant">
+                Add an extra layer of security by requiring an authenticator app code at login.
+              </p>
+              <button
+                type="button"
+                onClick={handleStartTwoFactorEnrollment}
+                disabled={twoFactorBusy}
+                className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-container"
+              >
+                {twoFactorBusy ? "Loading…" : "Enable 2FA"}
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)]">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Smartphone aria-hidden="true" className="h-5 w-5 text-primary" />
+              <h2 className="text-lg font-semibold text-foreground">Active Sessions</h2>
+            </div>
+            <button
+              type="button"
+              onClick={handleSignOutOtherSessions}
+              disabled={signingOutOthers}
+              className="flex items-center gap-1.5 text-xs font-semibold text-error hover:underline disabled:opacity-50"
+            >
+              <LogOut aria-hidden="true" className="h-3.5 w-3.5" />
+              Sign out others
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {sessions.length === 0 && <p className="text-sm text-on-surface-variant">No other sessions tracked yet.</p>}
+            {sessions.slice(0, 5).map((session) => (
+              <div
+                key={session.id}
+                className="flex items-center gap-3 rounded-xl border border-outline-variant/30 p-3"
+              >
+                <Laptop aria-hidden="true" className="h-4 w-4 shrink-0 text-on-surface-variant" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {session.browser ?? "Unknown"} · {session.device ?? "Unknown device"}
+                  </p>
+                  <p className="text-xs text-on-surface-variant">
+                    Active {formatRelativeTime(session.last_active_at)}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-outline-variant/30 bg-surface-container-lowest p-6 shadow-[0px_2px_12px_rgba(0,0,0,0.04)] lg:col-span-2">
+          <div className="mb-4 flex items-center gap-2">
+            <Clock aria-hidden="true" className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold text-foreground">Recent Login Activity</h2>
+          </div>
+          <div className="flex flex-col gap-2">
+            {loginActivity.length === 0 && (
+              <p className="text-sm text-on-surface-variant">No login activity recorded yet.</p>
+            )}
+            {loginActivity.slice(0, 5).map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between gap-3 rounded-xl border border-outline-variant/30 p-3"
+              >
+                <span className="text-sm text-foreground">
+                  {entry.success ? "Successful login" : "Failed login attempt"}
+                </span>
+                <span className="text-xs text-on-surface-variant">{formatRelativeTime(entry.created_at)}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-error/20 bg-error-container/10 p-6 lg:col-span-3">
+          <div className="mb-2 flex items-center gap-2">
+            <AlertTriangle aria-hidden="true" className="h-5 w-5 text-error" />
+            <h2 className="text-lg font-semibold text-foreground">Danger Zone</h2>
+          </div>
+          <p className="mb-4 text-sm text-on-surface-variant">
+            Deleting your account permanently removes your profile, addresses, and order history. This cannot be undone.
+          </p>
+          {deleteConfirmOpen ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-sm font-medium text-foreground">Are you absolutely sure?</span>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleting}
+                className="flex items-center gap-2 rounded-lg bg-error px-4 py-2 text-sm font-medium text-on-error transition-colors hover:opacity-90 disabled:opacity-50"
+              >
+                {deleting ? (
+                  <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Trash2 aria-hidden="true" className="h-4 w-4" />
+                )}
+                Yes, delete my account
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleting}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-on-surface-variant hover:bg-surface-container"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="flex items-center gap-2 rounded-lg border border-error px-4 py-2 text-sm font-medium text-error transition-colors hover:bg-error/5"
+            >
+              <Trash2 aria-hidden="true" className="h-4 w-4" />
+              Delete Account
+            </button>
+          )}
         </section>
       </div>
 

@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { products } from "@/data/products";
-import { getProductBySlug } from "@/services/product.service";
+import { getProductBySlug, getProducts } from "@/services/product.service";
 import { ProductPageClient } from "./ProductPageClient";
 
-export function generateStaticParams() {
-  return products.filter((product) => product.status === "active").map((product) => ({ slug: product.slug }));
+export async function generateStaticParams() {
+  const { products } = await getProducts({ limit: 500 });
+  return products.map((product) => ({ slug: product.slug }));
 }
 
 export async function generateMetadata({

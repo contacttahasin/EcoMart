@@ -14,15 +14,11 @@ export type VendorBusinessInfo = {
   businessCategory: string;
   address: string;
   postalCode: string;
-  tradeLicenseFileName: string | null;
 };
 
 export type VendorVerificationInfo = {
   idFrontFileName: string | null;
   idBackFileName: string | null;
-  businessRegistrationFileName: string | null;
-  tradeLicenseNumber: string;
-  tin: string;
   selfieCaptured: boolean;
 };
 
@@ -49,5 +45,6 @@ export type VendorAccount = {
   businessName: string;
   email: string;
   phone: string;
+  avatar: string | null;
   createdAt: string;
 };

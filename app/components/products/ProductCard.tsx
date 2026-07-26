@@ -3,9 +3,10 @@
 import { Check, Eye, Heart, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { memo, useState } from "react";
+import { memo } from "react";
 import type { Product } from "@/data/products";
 import { useCart } from "@/app/context/CartContext";
+import { useWishlist } from "@/app/context/WishlistContext";
 import { getEffectivePrice } from "@/services/product.service";
 
 type ProductCardProps = {
@@ -15,7 +16,8 @@ type ProductCardProps = {
 
 function ProductCardComponent({ product, onQuickView }: ProductCardProps) {
   const { items, addItem } = useCart();
-  const [wishlisted, setWishlisted] = useState(false);
+  const { isWishlisted, toggle } = useWishlist();
+  const wishlisted = isWishlisted(product.id);
   const effectivePrice = getEffectivePrice(product);
   const onSale = product.salePrice !== null && product.salePrice < product.price;
   const outOfStock = product.stock <= 0;
@@ -61,7 +63,7 @@ function ProductCardComponent({ product, onQuickView }: ProductCardProps) {
             type="button"
             aria-label={wishlisted ? `Remove ${product.title} from wishlist` : `Add ${product.title} to wishlist`}
             aria-pressed={wishlisted}
-            onClick={() => setWishlisted((prev) => !prev)}
+            onClick={() => toggle(product)}
             className="pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-on-surface-variant opacity-100 shadow-md transition-all duration-300 ease-out hover:scale-110 hover:text-primary focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100"
           >
             <Heart aria-hidden="true" className={`h-4 w-4 ${wishlisted ? "fill-primary text-primary" : ""}`} />

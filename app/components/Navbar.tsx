@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, Menu, Search, ShoppingCart, UserCircle, X } from "lucide-react";
+import { Menu, Search, ShoppingCart, UserCircle, X } from "lucide-react";
 import { AccountTypeModal } from "@/app/components/account/AccountTypeModal";
+import { NotificationBell } from "@/app/components/NotificationBell";
 import { useAuth } from "@/app/context/AuthContext";
+import { useVendorAuth } from "@/app/context/VendorAuthContext";
 import { useCart } from "@/app/context/CartContext";
 
 const navLinks = [
@@ -23,6 +25,7 @@ export default function Navbar() {
   const pathname = usePathname();
   const { itemCount } = useCart();
   const { user } = useAuth();
+  const { vendor } = useVendorAuth();
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -100,24 +103,18 @@ export default function Navbar() {
                 </span>
               )}
             </Link>
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="p-1.5 text-on-surface-variant transition-transform hover:text-primary active:scale-90 sm:p-2"
-            >
-              <Bell className="h-5 w-5 sm:h-6 sm:w-6" />
-            </button>
-            {user ? (
+            <NotificationBell />
+            {user || vendor ? (
               <Link
-                href="/account"
+                href={user ? "/account" : "/vendor/dashboard"}
                 aria-label="Account"
                 className="p-1.5 text-on-surface-variant transition-transform hover:text-primary active:scale-90 sm:p-2"
               >
-                {user.avatar ? (
+                {(user?.avatar ?? vendor?.avatar) ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={user.avatar}
-                    alt={user.name}
+                    src={(user?.avatar ?? vendor?.avatar) as string}
+                    alt={user?.name ?? vendor?.businessName}
                     className="h-5 w-5 rounded-full object-cover sm:h-6 sm:w-6"
                   />
                 ) : (

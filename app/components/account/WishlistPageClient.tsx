@@ -3,13 +3,13 @@
 import { Share2, ShoppingCart, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Product } from "@/data/products";
 import { useCart } from "@/app/context/CartContext";
-import { getEffectivePrice, getStockStatus } from "@/services/product.service";
+import { useWishlist } from "@/app/context/WishlistContext";
+import { getEffectivePrice, getProductsByIds, getStockStatus } from "@/services/product.service";
 
 type WishlistPageClientProps = {
-  initialItems: Product[];
   recommended: Product[];
 };
 
@@ -19,20 +19,32 @@ const STOCK_BADGE = {
   "out-of-stock": { label: "Out of Stock", className: "bg-surface-container-highest text-on-surface-variant" },
 } as const;
 
-export function WishlistPageClient({ initialItems, recommended }: WishlistPageClientProps) {
-  const [items, setItems] = useState(initialItems);
+export function WishlistPageClient({ recommended }: WishlistPageClientProps) {
+  const { productIds, toggle } = useWishlist();
+  const [items, setItems] = useState<Product[]>([]);
   const [removingIds, setRemovingIds] = useState<Set<string>>(new Set());
   const { addItem } = useCart();
 
-  const handleRemove = (productId: string) => {
-    setRemovingIds((prev) => new Set(prev).add(productId));
+  useEffect(() => {
+    let active = true;
+    getProductsByIds([...productIds]).then((fetched) => {
+      if (active) setItems(fetched);
+    });
+    return () => {
+      active = false;
+    };
+  }, [productIds]);
+
+  const handleRemove = (product: Product) => {
+    setRemovingIds((prev) => new Set(prev).add(product.id));
     setTimeout(() => {
-      setItems((prev) => prev.filter((product) => product.id !== productId));
+      setItems((prev) => prev.filter((item) => item.id !== product.id));
       setRemovingIds((prev) => {
         const next = new Set(prev);
-        next.delete(productId);
+        next.delete(product.id);
         return next;
       });
+      toggle(product);
     }, 300);
   };
 
@@ -102,7 +114,7 @@ export function WishlistPageClient({ initialItems, recommended }: WishlistPageCl
                   <button
                     type="button"
                     aria-label={`Remove ${product.title} from wishlist`}
-                    onClick={() => handleRemove(product.id)}
+                    onClick={() => handleRemove(product)}
                     className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/80 text-error shadow-sm backdrop-blur-sm transition-colors hover:bg-error-container"
                   >
                     <Trash2 aria-hidden="true" className="h-5 w-5" />

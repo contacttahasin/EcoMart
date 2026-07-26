@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
-  Bell,
   ChevronRight,
   Menu,
   Rocket,
@@ -16,85 +15,128 @@ import {
 } from "lucide-react";
 import { useVendorAuth } from "@/app/context/VendorAuthContext";
 import { VendorSidebar } from "@/app/components/vendor/dashboard/VendorSidebar";
+import { VendorNotificationBell } from "@/app/components/vendor/dashboard/VendorNotificationBell";
+import {
+  fetchRecentOrders,
+  fetchTopProducts,
+  fetchVendorDashboardSummary,
+  fetchVendorRevenueSeries,
+  percentDelta,
+  type DashboardRecentOrder,
+  type DashboardSummary,
+  type RevenueGranularity,
+  type RevenuePoint,
+  type TopProduct,
+} from "@/services/vendor-analytics.service";
 
-const statCards = [
-  {
-    label: "Total Sales",
-    value: "৳1,24,500",
-    delta: "+12.5%",
-    trend: "up" as const,
-    icon: Wallet,
-    iconBg: "bg-primary-container/20",
-    iconColor: "text-primary",
-  },
-  {
-    label: "Total Orders",
-    value: "342",
-    delta: "+8.2%",
-    trend: "up" as const,
-    icon: ShoppingCart,
-    iconBg: "bg-secondary-container/20",
-    iconColor: "text-secondary",
-  },
-  {
-    label: "Revenue",
-    value: "৳85,000",
-    delta: "-2.4%",
-    trend: "down" as const,
-    icon: Wallet,
-    iconBg: "bg-tertiary-container/20",
-    iconColor: "text-tertiary",
-  },
-  {
-    label: "Active Boosted",
-    value: "12",
-    badge: "LIVE",
-    icon: Rocket,
-    iconBg: "bg-primary-container/20",
-    iconColor: "text-primary",
-  },
-];
-
-const chartData = [
-  { day: "Mon", height: "h-3/4", shade: "bg-primary/10" },
-  { day: "Tue", height: "h-2/3", shade: "bg-primary/20" },
-  { day: "Wed", height: "h-full", shade: "bg-primary/30" },
-  { day: "Thu", height: "h-4/5", shade: "bg-primary/40" },
-  { day: "Fri", height: "h-3/5", shade: "bg-primary/50" },
-  { day: "Sat", height: "h-1/2", shade: "bg-primary/70" },
-  { day: "Sun", height: "h-full", shade: "bg-primary" },
-];
-
-const recentOrders = [
-  { id: "#EM-9021", customer: "Tanvir Ahmed", date: "Oct 24, 2024", total: "৳2,450", status: "Shipped" as const },
-  { id: "#EM-9022", customer: "Sanjida Khan", date: "Oct 24, 2024", total: "৳1,120", status: "Pending" as const },
-  { id: "#EM-9023", customer: "Rafiq Islam", date: "Oct 23, 2024", total: "৳5,800", status: "Delivered" as const },
-  { id: "#EM-9024", customer: "Musa Ibrahim", date: "Oct 23, 2024", total: "৳950", status: "Cancelled" as const },
-];
-
-const statusStyles: Record<(typeof recentOrders)[number]["status"], string> = {
-  Shipped: "bg-secondary-container text-on-secondary-container",
-  Pending: "bg-surface-container-highest text-foreground",
-  Delivered: "bg-tertiary-container text-on-tertiary-container",
-  Cancelled: "bg-error-container text-on-error-container",
+const statusStyles: Record<string, string> = {
+  processing: "bg-surface-container-highest text-foreground",
+  shipped: "bg-secondary-container text-on-secondary-container",
+  delivered: "bg-tertiary-container text-on-tertiary-container",
+  cancelled: "bg-error-container text-on-error-container",
+  returned: "bg-error-container text-on-error-container",
 };
 
-const topProducts = [
-  { name: "Eco Bamboo Cup", ctr: "12.4%", conv: "4.2%", emoji: "🥤" },
-  { name: "Organic Cotton Tote", ctr: "9.8%", conv: "3.7%", emoji: "👜" },
-  { name: "Beeswax Food Wraps", ctr: "8.1%", conv: "2.9%", emoji: "🌿" },
-];
+function formatTaka(amount: number) {
+  return `৳${amount.toLocaleString("en-BD", { maximumFractionDigits: 0 })}`;
+}
+
+function formatOrderDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
 
 export default function VendorDashboardPage() {
   const { vendor, isLoading } = useVendorAuth();
   const router = useRouter();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [granularity, setGranularity] = useState<RevenueGranularity>("daily");
+  const [series, setSeries] = useState<RevenuePoint[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [recentOrders, setRecentOrders] = useState<DashboardRecentOrder[]>([]);
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     if (!isLoading && !vendor) {
       router.replace("/vendor/login");
     }
   }, [isLoading, vendor, router]);
+
+  useEffect(() => {
+    if (!vendor) return;
+    let active = true;
+    fetchVendorRevenueSeries(vendor.id, granularity).then((points) => {
+      if (active) setSeries(points);
+    });
+    return () => {
+      active = false;
+    };
+  }, [vendor?.id, granularity]);
+
+  useEffect(() => {
+    if (!vendor) return;
+    let active = true;
+    Promise.all([fetchVendorDashboardSummary(vendor.id), fetchRecentOrders(vendor.id), fetchTopProducts(vendor.id)]).then(
+      ([summaryData, orders, products]) => {
+        if (!active) return;
+        setSummary(summaryData);
+        setRecentOrders(orders);
+        setTopProducts(products);
+      }
+    );
+    return () => {
+      active = false;
+    };
+  }, [vendor?.id]);
+
+  const salesDelta = summary ? percentDelta(summary.revenueThisMonth, summary.revenueLastMonth) : null;
+  const ordersDelta = summary ? percentDelta(summary.ordersThisMonth, summary.ordersLastMonth) : null;
+
+  const statCards = summary
+    ? [
+        {
+          label: "Total Sales",
+          value: formatTaka(summary.totalSalesAllTime),
+          delta: `${salesDelta!.trend === "up" ? "+" : "-"}${salesDelta!.pct.toFixed(1)}%`,
+          trend: salesDelta!.trend,
+          icon: Wallet,
+          iconBg: "bg-primary-container/20",
+          iconColor: "text-primary",
+        },
+        {
+          label: "Total Orders",
+          value: String(summary.totalOrdersAllTime),
+          delta: `${ordersDelta!.trend === "up" ? "+" : "-"}${ordersDelta!.pct.toFixed(1)}%`,
+          trend: ordersDelta!.trend,
+          icon: ShoppingCart,
+          iconBg: "bg-secondary-container/20",
+          iconColor: "text-secondary",
+        },
+        {
+          label: "Revenue",
+          value: formatTaka(summary.revenueThisMonth),
+          delta: `${salesDelta!.trend === "up" ? "+" : "-"}${salesDelta!.pct.toFixed(1)}%`,
+          trend: salesDelta!.trend,
+          icon: Wallet,
+          iconBg: "bg-tertiary-container/20",
+          iconColor: "text-tertiary",
+        },
+        {
+          label: "Active Boosted",
+          value: String(summary.activeBoostedCount),
+          badge: "LIVE",
+          icon: Rocket,
+          iconBg: "bg-primary-container/20",
+          iconColor: "text-primary",
+        },
+      ]
+    : [];
+
+  const visibleRecentOrders = recentOrders.filter((order) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return order.id.toLowerCase().includes(q) || order.customer.toLowerCase().includes(q);
+  });
 
   if (isLoading || !vendor) {
     return (
@@ -133,20 +175,15 @@ export default function VendorDashboardPage() {
               />
               <input
                 type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Search analytics, orders…"
                 className="w-full rounded-full border-none bg-surface-container-low py-2 pl-10 pr-4 text-sm outline-none transition-all focus:ring-2 focus:ring-secondary-container"
               />
             </div>
           </div>
           <div className="flex items-center gap-3 sm:gap-6">
-            <button
-              type="button"
-              aria-label="Notifications"
-              className="relative rounded-full p-2 transition-all hover:bg-surface-container-high/50"
-            >
-              <Bell aria-hidden="true" className="h-5 w-5 text-on-surface-variant" />
-              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-error" />
-            </button>
+            <VendorNotificationBell />
             <div className="flex items-center gap-3 border-l border-outline-variant pl-3 sm:pl-6">
               <div className="hidden text-right sm:block">
                 <p className="text-sm font-medium text-foreground">{vendor.businessName}</p>
@@ -154,28 +191,39 @@ export default function VendorDashboardPage() {
                   Premium Vendor
                 </p>
               </div>
-              <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary-container bg-secondary-container text-sm font-bold text-on-secondary-container">
-                {initials}
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border-2 border-primary-container bg-secondary-container text-sm font-bold text-on-secondary-container">
+                {vendor.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={vendor.avatar} alt={vendor.businessName} className="h-full w-full object-cover" />
+                ) : (
+                  initials
+                )}
               </div>
             </div>
           </div>
         </header>
 
         <div className="mx-auto max-w-[1400px] space-y-6 p-4 sm:space-y-8 sm:p-6 lg:p-8">
-          <div className="flex flex-col items-start justify-between gap-4 rounded-xl border border-error/20 bg-error-container/40 p-4 sm:flex-row sm:items-center">
-            <div className="flex items-start gap-3">
-              <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 flex-shrink-0 text-error" />
-              <div>
-                <h4 className="text-sm font-medium text-on-error-container">Low-stock alerts</h4>
-                <p className="text-sm text-on-error-container/80">
-                  3 items in your inventory are below the reorder point: Organic Jute Bags, Bamboo Straws (10pk).
-                </p>
+          {summary && summary.lowStockCount > 0 && (
+            <div className="flex flex-col items-start justify-between gap-4 rounded-xl border border-error/20 bg-error-container/40 p-4 sm:flex-row sm:items-center">
+              <div className="flex items-start gap-3">
+                <AlertTriangle aria-hidden="true" className="mt-0.5 h-5 w-5 shrink-0 text-error" />
+                <div>
+                  <h4 className="text-sm font-medium text-on-error-container">Low-stock alerts</h4>
+                  <p className="text-sm text-on-error-container/80">
+                    {summary.lowStockCount} item{summary.lowStockCount === 1 ? "" : "s"} in your inventory are below
+                    the reorder point{summary.lowStockNames.length ? `: ${summary.lowStockNames.join(", ")}` : ""}.
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => router.push("/vendor/inventory")}
+                className="w-full shrink-0 rounded-full bg-error px-4 py-1.5 text-sm font-semibold text-on-error transition-colors hover:bg-error/90 sm:w-auto"
+              >
+                Manage Inventory
+              </button>
             </div>
-            <button className="w-full flex-shrink-0 rounded-full bg-error px-4 py-1.5 text-sm font-semibold text-on-error transition-colors hover:bg-error/90 sm:w-auto">
-              Manage Inventory
-            </button>
-          </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
             {statCards.map((card) => {
@@ -222,22 +270,47 @@ export default function VendorDashboardPage() {
                 <p className="text-sm text-on-surface-variant">Performance analysis over time</p>
               </div>
               <div className="flex rounded-full bg-surface-container p-1">
-                <button className="rounded-full bg-surface-container-lowest px-4 py-1.5 text-sm font-semibold text-primary shadow-sm transition-all">
+                <button
+                  type="button"
+                  onClick={() => setGranularity("daily")}
+                  className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-all ${
+                    granularity === "daily"
+                      ? "bg-surface-container-lowest text-primary shadow-sm"
+                      : "text-on-surface-variant hover:text-foreground"
+                  }`}
+                >
                   Daily
                 </button>
-                <button className="rounded-full px-4 py-1.5 text-sm font-semibold text-on-surface-variant transition-all hover:text-foreground">
+                <button
+                  type="button"
+                  onClick={() => setGranularity("monthly")}
+                  className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-all ${
+                    granularity === "monthly"
+                      ? "bg-surface-container-lowest text-primary shadow-sm"
+                      : "text-on-surface-variant hover:text-foreground"
+                  }`}
+                >
                   Monthly
                 </button>
               </div>
             </div>
             <div className="flex h-56 w-full items-end gap-2 overflow-x-auto sm:h-72 lg:h-80 lg:px-4">
-              {chartData.map((bar) => (
-                <div key={bar.day} className={`group relative min-w-[28px] flex-1 ${bar.height} ${bar.shade} rounded-t-lg transition-all`} />
-              ))}
+              {series.map((bar) => {
+                const maxRevenue = Math.max(...series.map((point) => point.revenue), 1);
+                const percent = Math.max((bar.revenue / maxRevenue) * 100, 2);
+                return (
+                  <div
+                    key={bar.label}
+                    title={`${bar.label}: ৳${bar.revenue.toLocaleString("en-BD")} (${bar.orders} order${bar.orders === 1 ? "" : "s"})`}
+                    className="group relative min-w-7 flex-1 rounded-t-lg bg-primary transition-all"
+                    style={{ height: `${percent}%`, opacity: 0.25 + (percent / 100) * 0.75 }}
+                  />
+                );
+              })}
             </div>
             <div className="mt-4 flex justify-between px-2 text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">
-              {chartData.map((bar) => (
-                <span key={bar.day}>{bar.day}</span>
+              {series.map((bar) => (
+                <span key={bar.label}>{bar.label}</span>
               ))}
             </div>
           </div>
@@ -246,7 +319,12 @@ export default function VendorDashboardPage() {
             <div className="flex flex-col overflow-hidden rounded-2xl border border-white/30 bg-white/70 shadow-sm backdrop-blur-md lg:col-span-3">
               <div className="flex items-center justify-between border-b border-outline-variant p-6">
                 <h2 className="text-lg font-semibold text-foreground">Recent Orders</h2>
-                <button className="text-sm font-semibold text-primary hover:underline">View All</button>
+                <button
+                  onClick={() => router.push("/vendor/orders")}
+                  className="text-sm font-semibold text-primary hover:underline"
+                >
+                  View All
+                </button>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
@@ -260,19 +338,28 @@ export default function VendorDashboardPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant text-sm">
-                    {recentOrders.map((order) => (
+                    {visibleRecentOrders.map((order) => (
                       <tr key={order.id} className="transition-colors hover:bg-surface-container-low/50">
-                        <td className="whitespace-nowrap px-6 py-4 font-bold text-primary">{order.id}</td>
+                        <td className="whitespace-nowrap px-6 py-4 font-bold text-primary">#{order.id}</td>
                         <td className="whitespace-nowrap px-6 py-4">{order.customer}</td>
-                        <td className="whitespace-nowrap px-6 py-4">{order.date}</td>
-                        <td className="whitespace-nowrap px-6 py-4 font-medium">{order.total}</td>
+                        <td className="whitespace-nowrap px-6 py-4">{formatOrderDate(order.date)}</td>
+                        <td className="whitespace-nowrap px-6 py-4 font-medium">{formatTaka(order.total)}</td>
                         <td className="whitespace-nowrap px-6 py-4">
-                          <span className={`rounded-full px-3 py-1 text-xs font-bold ${statusStyles[order.status]}`}>
+                          <span
+                            className={`rounded-full px-3 py-1 text-xs font-bold capitalize ${statusStyles[order.status] ?? ""}`}
+                          >
                             {order.status}
                           </span>
                         </td>
                       </tr>
                     ))}
+                    {visibleRecentOrders.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-sm text-on-surface-variant">
+                          No orders yet.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -284,28 +371,36 @@ export default function VendorDashboardPage() {
               </div>
               <div className="space-y-6 p-6">
                 {topProducts.map((product) => (
-                  <div key={product.name} className="group flex items-center gap-4">
-                    <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-lg bg-surface-container-high text-2xl">
-                      {product.emoji}
+                  <div key={product.id} className="group flex items-center gap-4">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-surface-container-high text-2xl">
+                      {product.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
+                      ) : (
+                        "📦"
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <h4 className="truncate text-sm font-medium text-foreground">{product.name}</h4>
                       <div className="mt-1 flex items-center gap-4">
                         <div className="flex flex-col">
-                          <span className="text-[10px] font-bold uppercase text-on-surface-variant">CTR</span>
-                          <span className="text-sm font-semibold text-primary">{product.ctr}</span>
+                          <span className="text-[10px] font-bold uppercase text-on-surface-variant">Units Sold</span>
+                          <span className="text-sm font-semibold text-primary">{product.unitsSold}</span>
                         </div>
                         <div className="flex flex-col">
-                          <span className="text-[10px] font-bold uppercase text-on-surface-variant">Conv. Rate</span>
-                          <span className="text-sm font-semibold text-secondary">{product.conv}</span>
+                          <span className="text-[10px] font-bold uppercase text-on-surface-variant">Revenue</span>
+                          <span className="text-sm font-semibold text-secondary">{formatTaka(product.revenue)}</span>
                         </div>
                       </div>
                     </div>
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/5 text-primary transition-all group-hover:bg-primary group-hover:text-on-primary">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/5 text-primary transition-all group-hover:bg-primary group-hover:text-on-primary">
                       <ChevronRight aria-hidden="true" className="h-5 w-5" />
                     </div>
                   </div>
                 ))}
+                {topProducts.length === 0 && (
+                  <p className="text-center text-sm text-on-surface-variant">No sales yet.</p>
+                )}
               </div>
             </div>
           </div>

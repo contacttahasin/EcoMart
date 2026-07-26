@@ -1,5 +1,4 @@
-import type { Vendor } from "@/data/vendors";
-import type { VendorBusinessInfo, VendorPersonalInfo } from "@/app/types/vendor";
+import { supabase } from "@/lib/supabase";
 
 export const BUSINESS_TYPES = [
   { value: "individual", label: "Individual" },
@@ -14,7 +13,7 @@ export const BUSINESS_CATEGORIES = [
   { value: "eco-tech", label: "Eco-Friendly Tech" },
 ] as const;
 
-function slugify(value: string): string {
+export function slugify(value: string): string {
   return value
     .toLowerCase()
     .trim()
@@ -22,7 +21,7 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
-function uniqueSlug(base: string, existingSlugs: string[]): string {
+export function uniqueSlug(base: string, existingSlugs: string[]): string {
   const slugBase = slugify(base) || "vendor";
   if (!existingSlugs.includes(slugBase)) return slugBase;
 
@@ -31,31 +30,68 @@ function uniqueSlug(base: string, existingSlugs: string[]): string {
   return `${slugBase}-${suffix}`;
 }
 
-/**
- * Turns the completed registration wizard data into a storefront-facing
- * Vendor record. Banking/payout details collected in the final step are
- * intentionally excluded — they're never part of the public vendors list.
- */
-export function buildVendorFromRegistration(
-  data: { personal: VendorPersonalInfo; business: VendorBusinessInfo },
-  existingSlugs: string[]
-): Vendor {
-  const slug = uniqueSlug(data.business.shopName, existingSlugs);
-  const category = BUSINESS_CATEGORIES.find((option) => option.value === data.business.businessCategory);
+export type VendorBranding = {
+  shopName: string;
+  bio: string;
+  logoUrl: string | null;
+  coverImageUrl: string | null;
+  websiteUrl: string;
+  instagramHandle: string;
+  linkedinUrl: string;
+};
 
+export async function fetchVendorBranding(vendorId: string): Promise<VendorBranding | null> {
+  const { data } = await supabase
+    .from("vendor_profiles")
+    .select("shop_name, bio, logo_url, cover_image_url, website_url, instagram_handle, linkedin_url")
+    .eq("id", vendorId)
+    .single();
+  if (!data) return null;
   return {
-    id: crypto.randomUUID(),
-    name: data.business.shopName,
-    slug,
-    profileUrl: `/vendors/${slug}`,
-    profileImage: null,
-    storeName: category?.label ?? "New Merchant",
-    rating: 0,
-    totalReviews: 0,
-    monthlySales: 0,
-    verified: false,
-    featured: false,
-    joinedDate: new Date().toISOString().slice(0, 10),
-    location: data.business.address,
+    shopName: data.shop_name,
+    bio: data.bio ?? "",
+    logoUrl: data.logo_url,
+    coverImageUrl: data.cover_image_url,
+    websiteUrl: data.website_url ?? "",
+    instagramHandle: data.instagram_handle ?? "",
+    linkedinUrl: data.linkedin_url ?? "",
   };
+}
+
+export async function updateVendorBranding(
+  vendorId: string,
+  updates: { shopName?: string; bio?: string; websiteUrl?: string; instagramHandle?: string; linkedinUrl?: string }
+): Promise<void> {
+  const payload: Record<string, string> = {};
+  if (updates.shopName !== undefined) payload.shop_name = updates.shopName;
+  if (updates.bio !== undefined) payload.bio = updates.bio;
+  if (updates.websiteUrl !== undefined) payload.website_url = updates.websiteUrl;
+  if (updates.instagramHandle !== undefined) payload.instagram_handle = updates.instagramHandle;
+  if (updates.linkedinUrl !== undefined) payload.linkedin_url = updates.linkedinUrl;
+  await supabase.from("vendor_profiles").update(payload).eq("id", vendorId);
+}
+
+async function uploadVendorImage(vendorId: string, file: File, filename: "logo" | "cover"): Promise<string> {
+  const extension = file.name.split(".").pop() ?? "jpg";
+  const path = `${vendorId}/${filename}.${extension}`;
+
+  const { error } = await supabase.storage.from("vendor-branding").upload(path, file, { upsert: true });
+  if (error) throw error;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from("vendor-branding").getPublicUrl(path);
+  return `${publicUrl}?t=${Date.now()}`;
+}
+
+export async function uploadVendorLogo(vendorId: string, file: File): Promise<string> {
+  const url = await uploadVendorImage(vendorId, file, "logo");
+  await supabase.from("vendor_profiles").update({ logo_url: url }).eq("id", vendorId);
+  return url;
+}
+
+export async function uploadVendorCoverImage(vendorId: string, file: File): Promise<string> {
+  const url = await uploadVendorImage(vendorId, file, "cover");
+  await supabase.from("vendor_profiles").update({ cover_image_url: url }).eq("id", vendorId);
+  return url;
 }
