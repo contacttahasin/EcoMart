@@ -1,3 +1,4 @@
+import path from "path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -6,6 +7,9 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "picsum.photos" },
       { protocol: "https", hostname: "yqvbfglbjwadjycavkgq.supabase.co", pathname: "/storage/v1/object/public/**" },
     ],
+  },
+  turbopack: {
+    root: path.join(__dirname),
   },
 };
 

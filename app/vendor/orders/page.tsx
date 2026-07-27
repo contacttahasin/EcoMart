@@ -175,10 +175,12 @@ export default function VendorOrdersPage() {
     }
   }, [isLoading, vendor, router]);
 
+  const vendorId = vendor?.id;
+
   const loadOrders = useCallback(async () => {
-    if (!vendor) return;
+    if (!vendorId) return;
     try {
-      const rows = await fetchVendorOrders(vendor.id);
+      const rows = await fetchVendorOrders(vendorId);
       setOrders(rows);
       setOrdersError(null);
     } catch (err) {
@@ -186,12 +188,12 @@ export default function VendorOrdersPage() {
     } finally {
       setOrdersLoading(false);
     }
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    fetchVendorOrders(vendor.id)
+    fetchVendorOrders(vendorId)
       .then((rows) => {
         if (!active) return;
         setOrders(rows);
@@ -207,7 +209,7 @@ export default function VendorOrdersPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
     document.body.style.overflow = isPanelOpen || isManualOrderOpen ? "hidden" : "";

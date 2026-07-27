@@ -117,10 +117,12 @@ export default function VendorInventoryPage() {
     }
   }, []);
 
+  const vendorId = vendor?.id;
+
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    Promise.all([fetchVendorInventory(vendor.id), fetchStockMovements(vendor.id)])
+    Promise.all([fetchVendorInventory(vendorId), fetchStockMovements(vendorId)])
       .then(([rows, moves]) => {
         if (!active) return;
         setItems(rows);
@@ -142,7 +144,7 @@ export default function VendorInventoryPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   const saveGlobalThreshold = async () => {
     if (!vendor) return;

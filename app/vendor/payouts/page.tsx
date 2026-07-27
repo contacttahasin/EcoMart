@@ -108,11 +108,13 @@ export default function VendorPayoutsPage() {
     }
   }, [isLoading, vendor, router]);
 
-  const loadAll = useCallback(async (vendorId: string) => {
+  const vendorId = vendor?.id;
+
+  const loadAll = useCallback(async (targetVendorId: string) => {
     const [balanceData, txRows, methodRows] = await Promise.all([
-      fetchPayoutBalances(vendorId),
-      fetchTransactions(vendorId),
-      fetchPayoutMethods(vendorId),
+      fetchPayoutBalances(targetVendorId),
+      fetchTransactions(targetVendorId),
+      fetchPayoutMethods(targetVendorId),
     ]);
     setBalances(balanceData);
     setTransactions(txRows);
@@ -120,9 +122,9 @@ export default function VendorPayoutsPage() {
   }, []);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    Promise.all([fetchPayoutBalances(vendor.id), fetchTransactions(vendor.id), fetchPayoutMethods(vendor.id)])
+    Promise.all([fetchPayoutBalances(vendorId), fetchTransactions(vendorId), fetchPayoutMethods(vendorId)])
       .then(([balanceData, txRows, methodRows]) => {
         if (!active) return;
         setBalances(balanceData);
@@ -135,7 +137,7 @@ export default function VendorPayoutsPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
     document.body.style.overflow = isModalOpen ? "hidden" : "";

@@ -111,11 +111,13 @@ export default function VendorPromotionsPage() {
     }
   }, [isLoading, vendor, router]);
 
-  const loadAll = useCallback(async (vendorId: string) => {
+  const vendorId = vendor?.id;
+
+  const loadAll = useCallback(async (targetVendorId: string) => {
     const [campaignRows, summaryData, eligible] = await Promise.all([
-      fetchCampaigns(vendorId),
-      fetchPromotionsSummary(vendorId),
-      fetchEligibleProducts(vendorId),
+      fetchCampaigns(targetVendorId),
+      fetchPromotionsSummary(targetVendorId),
+      fetchEligibleProducts(targetVendorId),
     ]);
     setCampaigns(campaignRows);
     setSummary(summaryData);
@@ -123,9 +125,9 @@ export default function VendorPromotionsPage() {
   }, []);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    Promise.all([fetchCampaigns(vendor.id), fetchPromotionsSummary(vendor.id), fetchEligibleProducts(vendor.id)])
+    Promise.all([fetchCampaigns(vendorId), fetchPromotionsSummary(vendorId), fetchEligibleProducts(vendorId)])
       .then(([campaignRows, summaryData, eligible]) => {
         if (!active) return;
         setCampaigns(campaignRows);
@@ -138,7 +140,7 @@ export default function VendorPromotionsPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
     document.body.style.overflow = isModalOpen ? "hidden" : "";

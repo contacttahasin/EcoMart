@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { useAuth } from "@/app/context/AuthContext";
 import { formatRelativeTime } from "@/lib/format";
@@ -27,16 +27,18 @@ export function NotificationBell({ buttonClassName = DEFAULT_BUTTON_CLASS }: Not
   const [unreadCount, setUnreadCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(async () => {
-    if (!user) return;
-    const [list, count] = await Promise.all([fetchNotifications(user.id), fetchUnreadCount(user.id)]);
-    setNotifications(list);
-    setUnreadCount(count);
-  }, [user]);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!user) return;
+    let active = true;
+    Promise.all([fetchNotifications(user.id), fetchUnreadCount(user.id)]).then(([list, count]) => {
+      if (!active) return;
+      setNotifications(list);
+      setUnreadCount(count);
+    });
+    return () => {
+      active = false;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;

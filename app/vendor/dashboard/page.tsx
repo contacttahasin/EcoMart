@@ -62,21 +62,23 @@ export default function VendorDashboardPage() {
     }
   }, [isLoading, vendor, router]);
 
+  const vendorId = vendor?.id;
+
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    fetchVendorRevenueSeries(vendor.id, granularity).then((points) => {
+    fetchVendorRevenueSeries(vendorId, granularity).then((points) => {
       if (active) setSeries(points);
     });
     return () => {
       active = false;
     };
-  }, [vendor?.id, granularity]);
+  }, [vendorId, granularity]);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    Promise.all([fetchVendorDashboardSummary(vendor.id), fetchRecentOrders(vendor.id), fetchTopProducts(vendor.id)]).then(
+    Promise.all([fetchVendorDashboardSummary(vendorId), fetchRecentOrders(vendorId), fetchTopProducts(vendorId)]).then(
       ([summaryData, orders, products]) => {
         if (!active) return;
         setSummary(summaryData);
@@ -87,7 +89,7 @@ export default function VendorDashboardPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   const salesDelta = summary ? percentDelta(summary.revenueThisMonth, summary.revenueLastMonth) : null;
   const ordersDelta = summary ? percentDelta(summary.ordersThisMonth, summary.ordersLastMonth) : null;

@@ -133,14 +133,16 @@ export default function VendorSettingsPage() {
     }
   }, [isLoading, vendor, router]);
 
+  const vendorId = vendor?.id;
+
   const loadBranding = useCallback(async () => {
-    if (!vendor) return;
+    if (!vendorId) return;
     const [branding, kyc, docs, policies, shipping] = await Promise.all([
-      fetchVendorBranding(vendor.id),
-      fetchVendorKyc(vendor.id),
-      fetchVendorDocuments(vendor.id),
-      fetchVendorPolicies(vendor.id),
-      fetchShippingSettings(vendor.id),
+      fetchVendorBranding(vendorId),
+      fetchVendorKyc(vendorId),
+      fetchVendorDocuments(vendorId),
+      fetchVendorPolicies(vendorId),
+      fetchShippingSettings(vendorId),
     ]);
     if (branding) {
       setShopName(branding.shopName);
@@ -162,17 +164,17 @@ export default function VendorSettingsPage() {
     setShippingRates(shipping.rates);
     setFreeShippingEnabled(shipping.freeShippingEnabled);
     setFreeShippingThreshold(shipping.freeShippingThreshold !== null ? String(shipping.freeShippingThreshold) : "");
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
     Promise.all([
-      fetchVendorBranding(vendor.id),
-      fetchVendorKyc(vendor.id),
-      fetchVendorDocuments(vendor.id),
-      fetchVendorPolicies(vendor.id),
-      fetchShippingSettings(vendor.id),
+      fetchVendorBranding(vendorId),
+      fetchVendorKyc(vendorId),
+      fetchVendorDocuments(vendorId),
+      fetchVendorPolicies(vendorId),
+      fetchShippingSettings(vendorId),
     ]).then(([branding, kyc, docs, policies, shipping]) => {
       if (!active) return;
       if (branding) {
@@ -199,17 +201,17 @@ export default function VendorSettingsPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
-    if (!vendor) return;
-    fetchNotificationPreferences(vendor.id).then((prefs) => {
+    if (!vendorId) return;
+    fetchNotificationPreferences(vendorId).then((prefs) => {
       if (prefs) setNotificationPrefs(prefs);
     });
-    fetchActiveSessions(vendor.id).then(setSessions);
-    fetchLoginActivity(vendor.id).then(setLoginActivity);
+    fetchActiveSessions(vendorId).then(setSessions);
+    fetchLoginActivity(vendorId).then(setLoginActivity);
     listTwoFactorFactors().then((factors) => setTwoFactorEnabled(factors.some((f) => f.status === "verified")));
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
     const timeouts = timeoutsRef.current;

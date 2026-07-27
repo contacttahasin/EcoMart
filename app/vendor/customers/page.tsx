@@ -90,6 +90,8 @@ export default function VendorCustomersPage() {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [customerSummary, setCustomerSummary] = useState<CustomerOrderSummary | null>(null);
 
+  const vendorId = vendor?.id;
+
   useEffect(() => {
     if (!isLoading && !vendor) {
       router.replace("/vendor/login");
@@ -97,9 +99,9 @@ export default function VendorCustomersPage() {
   }, [isLoading, vendor, router]);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    fetchVendorReviews(vendor.id, vendor.id)
+    fetchVendorReviews(vendorId, vendorId)
       .then((rows) => {
         if (active) setReviews(rows);
       })
@@ -109,12 +111,12 @@ export default function VendorCustomersPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
-    if (!vendor) return;
+    if (!vendorId) return;
     let active = true;
-    fetchConversations(vendor.id)
+    fetchConversations(vendorId)
       .then((rows) => {
         if (!active) return;
         setConversations(rows);
@@ -126,22 +128,22 @@ export default function VendorCustomersPage() {
     return () => {
       active = false;
     };
-  }, [vendor?.id]);
+  }, [vendorId]);
 
   useEffect(() => {
-    if (!selectedConversationId || !vendor) return;
+    if (!selectedConversationId || !vendorId) return;
     let active = true;
     fetchMessages(selectedConversationId).then((rows) => {
       if (active) setMessages(rows);
     });
     const conversation = conversations.find((c) => c.id === selectedConversationId);
     if (conversation) {
-      fetchCustomerOrderSummary(vendor.id, conversation.customerId).then((summary) => {
+      fetchCustomerOrderSummary(vendorId, conversation.customerId).then((summary) => {
         if (active) setCustomerSummary(summary);
       });
     }
     const unsubscribe = subscribeToMessages(selectedConversationId, (message) => {
-      if (message.senderId === vendor.id) return;
+      if (message.senderId === vendorId) return;
       setMessages((prev) => [...prev, message]);
     });
     return () => {
@@ -149,7 +151,7 @@ export default function VendorCustomersPage() {
       unsubscribe();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedConversationId, vendor?.id]);
+  }, [selectedConversationId, vendorId]);
 
   const selectConversation = (id: string) => {
     setSelectedConversationId(id);

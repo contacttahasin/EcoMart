@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { useVendorAuth } from "@/app/context/VendorAuthContext";
 import { formatRelativeTime } from "@/lib/format";
@@ -27,16 +27,18 @@ export function VendorNotificationBell({ buttonClassName = DEFAULT_BUTTON_CLASS 
   const [unreadCount, setUnreadCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const refresh = useCallback(async () => {
-    if (!vendor) return;
-    const [list, count] = await Promise.all([fetchNotifications(vendor.id), fetchUnreadCount(vendor.id)]);
-    setNotifications(list);
-    setUnreadCount(count);
-  }, [vendor]);
-
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    if (!vendor) return;
+    let active = true;
+    Promise.all([fetchNotifications(vendor.id), fetchUnreadCount(vendor.id)]).then(([list, count]) => {
+      if (!active) return;
+      setNotifications(list);
+      setUnreadCount(count);
+    });
+    return () => {
+      active = false;
+    };
+  }, [vendor]);
 
   useEffect(() => {
     if (!vendor) return;
