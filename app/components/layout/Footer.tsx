@@ -124,7 +124,7 @@ export default function Footer() {
 
         <div className="mt-10 flex flex-col gap-4 border-t border-outline-variant pt-6 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-on-surface-variant">
-            © {year} EcoMarket Marketplace. All Rights Reserved.
+            © {year} EcoMarket Marketplace. All Rights Reserved. Created by Tahasin Islam and Masfi.
           </p>
           <div className="flex items-center gap-4 text-xs text-on-surface-variant">
             <span>English (US)</span>
